@@ -1,0 +1,2341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SERP Position Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #21263a; --border: #2e3347;
+    --accent: #e8792a; --text: #e2e8f0; --muted: #64748b;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 12px 24px; display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 { font-size: 16px; font-weight: 600; flex-shrink: 0; }
+  header h1 span { color: var(--accent); }
+  .domain-chip { background: rgba(232,121,42,.15); color: var(--accent); border: 1px solid rgba(232,121,42,.3); border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+
+  .btn { padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity .15s, transform .1s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { opacity: .88; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); }
+  .btn-danger { background: rgba(239,68,68,.12); color: var(--red); border: 1px solid rgba(239,68,68,.25); }
+  .btn-danger:hover { background: rgba(239,68,68,.22); }
+  .btn-sm { padding: 4px 9px; font-size: 12px; }
+
+  .layout { display: flex; height: calc(100vh - 53px); }
+
+  /* SIDEBAR */
+  .sidebar { width: 290px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .sb-header { padding: 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .sb-header span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); flex: 1; }
+  .sb-actions { padding: 8px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); }
+  .sb-actions .btn { flex: 1; justify-content: center; font-size: 12px; }
+  .kw-list { flex: 1; overflow-y: auto; padding: 6px; }
+  .kw-list::-webkit-scrollbar { width: 4px; }
+  .kw-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .kw-item { padding: 9px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; transition: all .15s; margin-bottom: 3px; }
+  .kw-item:hover { background: var(--surface2); border-color: var(--border); }
+  .kw-item.active { background: var(--surface2); border-color: var(--accent); }
+  .kw-item.inactive { opacity: .45; }
+  .kw-item.inactive:hover { opacity: .7; }
+  .kw-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+  .kw-q { font-size: 13px; font-weight: 500; flex: 1; word-break: break-word; line-height: 1.3; }
+  .pos-badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 99px; flex-shrink: 0; min-width: 34px; text-align: center; }
+  .pos-good { background: rgba(34,197,94,.15); color: var(--green); }
+  .pos-mid  { background: rgba(234,179,8,.15);  color: var(--yellow); }
+  .pos-low  { background: rgba(239,68,68,.15);  color: var(--red); }
+  .pos-na   { background: var(--surface2); color: var(--muted); }
+  .pos-prev { font-size: 11px; color: var(--muted); font-weight: 700; flex-shrink: 0; }
+  .pos-new  { font-size: 10px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 99px; padding: 1px 6px; flex-shrink: 0; }
+  .trend-arrow { font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .trend-arrow.up   { color: var(--green); }
+  .trend-arrow.down { color: var(--red); }
+  .trend-arrow.flat { color: var(--muted); }
+  .kw-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .kw-tag { background: var(--surface2); padding: 1px 5px; border-radius: 4px; }
+  .kw-btns { display: flex; gap: 3px; margin-top: 5px; }
+
+  /* MAIN */
+  .main { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+  .main::-webkit-scrollbar { width: 5px; }
+  .main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; gap: 14px; color: var(--muted); }
+  .empty-icon { font-size: 52px; opacity: .35; }
+  .empty h2 { font-size: 17px; color: var(--text); }
+  .empty p { font-size: 13px; max-width: 300px; line-height: 1.6; }
+
+  /* ─── PORTADA / DASHBOARD ─────────────────────────────────────────────── */
+  .portada { padding: 32px; display: flex; flex-direction: column; gap: 24px; overflow-y: auto; height: 100%; }
+  .portada-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .portada-title { font-size: 21px; font-weight: 700; color: var(--text); flex: 1; }
+  .portada-title span { color: var(--accent); }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .metric-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 18px; transition: border-color .2s; }
+  .metric-card:hover { border-color: var(--accent); }
+  .metric-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 10px; }
+  .metric-value { font-size: 30px; font-weight: 800; color: var(--text); line-height: 1; }
+  .metric-icon { font-size: 18px; margin-bottom: 6px; }
+  .metric-delta { font-size: 12px; margin-top: 6px; font-weight: 600; }
+  .portada-foot { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
+  .portada-no-key { background: rgba(232,121,42,.08); border: 1px solid rgba(232,121,42,.25); border-radius: var(--radius); padding: 16px 20px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .portada-no-key b { color: var(--accent); }
+
+  /* ─── GSC ─────────────────────────────────────────────────────────────── */
+  .gsc-section { display: flex; flex-direction: column; gap: 16px; }
+  .gsc-tabs { display: flex; gap: 6px; }
+  .gsc-tab { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .gsc-tab.active { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+  .gsc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .gsc-table th { text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .gsc-table td { padding: 9px 10px; border-bottom: 1px solid rgba(46,51,71,.5); color: var(--text); }
+  .gsc-table tr:last-child td { border-bottom: none; }
+  .gsc-table tr:hover td { background: rgba(255,255,255,.02); }
+  .gsc-table td.num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .gsc-table td.pos { text-align: right; font-weight: 700; }
+  .gsc-url { color: var(--muted); font-size: 11px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gsc-connect-box { background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.25); border-radius: var(--radius); padding: 16px 20px; font-size: 13px; color: var(--muted); line-height: 1.8; }
+  .gsc-connect-box b { color: var(--blue); }
+  .settings-sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+  .serp-key-row { display:flex; gap:6px; align-items:center; }
+  .serp-key-row input { flex:1; }
+  .serp-key-balance { font-size:11px; font-weight:700; white-space:nowrap; min-width:80px; text-align:right; color:var(--muted); }
+  .serp-key-balance.ok { color:var(--green); }
+  .serp-key-balance.warn { color:var(--yellow,#f5a623); }
+  .serp-key-balance.empty { color:var(--red); }
+  .settings-group-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); padding: 4px 0 2px; }
+  .gsc-status { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border-radius: 7px; background: var(--surface2); border: 1px solid var(--border); }
+  .gsc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .gsc-dot.on { background: var(--green); }
+  .period-bar { display: flex; gap: 3px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .period-btn { padding: 4px 11px; border-radius: 5px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); background: transparent; transition: all .15s; }
+  .period-btn:hover { color: var(--text); background: var(--border); }
+  .period-btn.active { background: var(--accent); color: #fff; }
+
+  /* ─── COUNTRY CHIPS ─────────────────────────────────────────────────── */
+  .country-chip { padding: 5px 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; }
+  .country-chip:hover { border-color: var(--accent); color: var(--accent); }
+  /* ─── KW RADIO IN TABLE ─────────────────────────────────────────────── */
+  .kw-radio-row { cursor:pointer; transition:background .12s; }
+  .kw-radio-row:hover { background:rgba(255,255,255,.04); }
+  .kw-radio-row.selected { background:rgba(232,121,42,.1); }
+  /* ─── METRIC TOGGLES ────────────────────────────────────────────────── */
+  .metric-toggle { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:99px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); font-size:12px; font-weight:500; cursor:pointer; transition:all .15s; }
+  .metric-toggle .mt-dot { width:8px; height:8px; border-radius:50%; background:var(--mt-color,#888); opacity:.4; transition:opacity .15s; }
+  .metric-toggle.on { border-color:var(--mt-color,#888); color:var(--text); }
+  .metric-toggle.on .mt-dot { opacity:1; }
+  .country-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ─── COUNTRY SETTINGS ───────────────────────────────────────────────── */
+  .country-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; padding: 2px; }
+  .country-toggle { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); cursor: pointer; transition: all .15s; font-size: 12px; }
+  .country-toggle:hover { border-color: var(--accent); }
+  .country-toggle.on { border-color: var(--accent); background: rgba(232,121,42,.12); }
+  .country-toggle input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* ─── REFERENCE PANEL ───────────────────────────────────────────────── */
+  .ref-section { display: flex; flex-direction: column; gap: 12px; }
+  .ref-section h2 { font-size: 15px; font-weight: 700; color: var(--text); }
+  .ref-search { width: 100%; padding: 7px 12px; border-radius: 7px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-size: 13px; outline: none; }
+  .ref-search:focus { border-color: var(--accent); }
+  .ref-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ref-table th { text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .ref-table td { padding: 8px 10px; border-bottom: 1px solid rgba(46,51,71,.4); color: var(--text); vertical-align: middle; }
+  .ref-table tr:last-child td { border-bottom: none; }
+  .ref-table tr:hover td { background: rgba(255,255,255,.02); }
+  .ref-table td.code { font-family: monospace; font-size: 13px; color: var(--accent); font-weight: 700; }
+  .ref-table td.muted { color: var(--muted); font-size: 12px; }
+  .copy-btn { padding: 3px 9px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+  /* ─── NAV TABS ───────────────────────────────────────────────────────── */
+  .nav-tabs { display: flex; gap: 2px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .nav-tab { padding: 5px 16px; border-radius: 5px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; transition: all .15s; white-space: nowrap; }
+  .nav-tab:hover { color: var(--text); background: rgba(255,255,255,.05); }
+  .nav-tab.active { background: var(--accent); color: #fff; }
+
+  /* ─── URL VIEW ───────────────────────────────────────────────────────── */
+  .url-item { padding: 9px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; transition: all .15s; margin-bottom: 3px; }
+  .url-item:hover { background: var(--surface2); border-color: var(--border); }
+  .url-item.active { background: var(--surface2); border-color: var(--accent); }
+  .url-slug { font-size: 12px; font-weight: 500; word-break: break-all; line-height: 1.4; color: var(--text); }
+  .url-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; }
+  .url-stat { display: flex; flex-direction: column; align-items: center; }
+  .url-stat-val { font-size: 18px; font-weight: 800; color: var(--text); }
+  .url-stat-lbl { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .url-detail-head { display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+  .url-detail-path { font-size: 13px; font-weight: 600; color: var(--accent); word-break: break-all; }
+  .url-stats-row { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 4px; }
+
+  /* KW DETAIL */
+  .kw-header-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+  .kw-header-title { flex: 1; }
+  .kw-header-title h2 { font-size: 19px; font-weight: 600; margin-bottom: 8px; }
+  .params-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ptag { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 9px; font-size: 11px; color: var(--muted); }
+  .ptag b { color: var(--text); }
+  .kw-stats { display: flex; gap: 14px; }
+  .stat { text-align: center; min-width: 60px; }
+  .stat-val { font-size: 26px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .stat-val.na { font-size: 18px; color: var(--muted); }
+  .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: .5px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .card-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .period-btns { display: flex; gap: 3px; }
+  .pbtn { padding: 3px 10px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; transition: all .15s; }
+  .pbtn.active { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+  .chart-wrap { height: 230px; padding: 14px 14px 4px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th { padding: 9px 14px; text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody td { padding: 9px 14px; font-size: 13px; }
+  .url-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .up { color: var(--green); } .dn { color: var(--red); } .eq { color: var(--muted); }
+
+  /* MODAL */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 1000; align-items: center; justify-content: center; }
+  .overlay.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+  .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+  .fg { display: flex; flex-direction: column; gap: 5px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .span2 { grid-column: span 2; }
+  .sec-title { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; padding-bottom: 4px; border-bottom: 1px solid var(--border); grid-column: span 2; }
+  label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  input, select { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 8px 11px; color: var(--text); font-size: 13px; outline: none; transition: border-color .15s; width: 100%; }
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--muted); }
+  select option { background: var(--surface2); }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+  /* IMPORT ZONE */
+  .drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 28px; text-align: center; color: var(--muted); font-size: 13px; cursor: pointer; transition: all .2s; margin-top: 8px; }
+  .drop-zone:hover, .drop-zone.drag { border-color: var(--accent); color: var(--text); background: rgba(232,121,42,.05); }
+  .drop-zone input[type=file] { display: none; }
+  .import-preview { max-height: 160px; overflow-y: auto; margin-top: 10px; font-size: 12px; color: var(--muted); border-radius: 6px; background: var(--surface2); padding: 8px; }
+
+  /* FILTER BAR */
+  .sb-filter { padding: 8px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+  .filter-search { position: relative; }
+  .filter-search input { padding-left: 28px; font-size: 12px; }
+  .filter-search::before { content: '🔍'; position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 11px; pointer-events: none; }
+  .country-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .cc { padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .cc:hover { border-color: var(--accent); color: var(--text); }
+  .cc.on { background: rgba(232,121,42,.15); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .cc.all { border-color: var(--muted); }
+  .cc.all.on { background: var(--surface2); border-color: var(--text); color: var(--text); }
+
+  /* ACTIVITY */
+  .btn-active { background: rgba(232,121,42,.18) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
+  .mv-tag { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; font-size: 11px; color: var(--muted); }
+
+  /* SPINNER */
+  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.2); border-top-color: currentColor; border-radius: 50%; animation: rot .65s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* TOAST */
+  #toast { position: fixed; bottom: 22px; right: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 16px; font-size: 13px; box-shadow: 0 4px 24px rgba(0,0,0,.4); z-index: 2000; transform: translateY(16px); opacity: 0; transition: all .22s; max-width: 320px; }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.ok { border-color: var(--green); color: var(--green); }
+  #toast.err { border-color: var(--red); color: var(--red); }
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SERP <span>Tracker</span></h1>
+  <nav class="nav-tabs">
+    <button class="nav-tab active" id="tab-home" onclick="setView('home')">🏠 Home</button>
+    <button class="nav-tab" id="tab-kw" onclick="setView('kw')">🔑 Posiciones KW</button>
+    <button class="nav-tab" id="tab-urls" onclick="setView('urls')">📄 Análisis URLs</button>
+    <button class="nav-tab" id="tab-ref" onclick="setView('ref')">📋 Referencia</button>
+  </nav>
+  <span id="domainChip" class="domain-chip" style="margin-left:auto">getlinko.com</span>
+  <button class="btn btn-secondary btn-sm" onclick="openSettings()">⚙ Ajustes</button>
+  <div id="kwToolbar" style="display:none;gap:6px;align-items:center;">
+    <button class="btn btn-secondary btn-sm" onclick="openImport()">⬆ CSV</button>
+    <a href="/api/export" class="btn btn-ghost btn-sm">⬇ Exportar</a>
+    <button class="btn btn-primary btn-sm" onclick="refreshAll()" id="refreshAllBtn">↻ Actualizar</button>
+    <button class="btn btn-secondary btn-sm" onclick="togglePanel('logs')" id="logsBtn">📋 Logs</button>
+    <button class="btn btn-secondary btn-sm" onclick="togglePanel('movements')" id="movementsBtn">📈 Movimientos</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar" style="display:none">
+    <!-- KW mode sidebar -->
+    <div id="sbKw" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="sb-header">
+        <span id="kwCount">Keywords</span>
+        <button class="btn btn-primary btn-sm" onclick="openAdd()">+ Añadir</button>
+      </div>
+      <div class="sb-filter">
+        <div class="filter-search">
+          <input id="searchInput" placeholder="Buscar keyword..." oninput="renderSidebar()" autocomplete="off">
+        </div>
+        <div class="country-chips" id="countryChips"></div>
+      </div>
+      <div id="kwList" class="kw-list"></div>
+    </div>
+    <!-- URL mode sidebar -->
+    <div id="sbUrls" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="sb-header">
+        <span id="urlCount">0 URLs</span>
+        <button class="btn btn-primary btn-sm" onclick="openAddUrl()">+ Añadir</button>
+      </div>
+      <div style="padding:6px 8px;border-bottom:1px solid var(--border);">
+        <div class="period-bar" id="urlPeriodBar">
+          <button class="period-btn active" onclick="setUrlPeriod(7,this)">7D</button>
+          <button class="period-btn" onclick="setUrlPeriod(30,this)">1M</button>
+          <button class="period-btn" onclick="setUrlPeriod(90,this)">3M</button>
+          <button class="period-btn" onclick="setUrlPeriod(180,this)">6M</button>
+        </div>
+      </div>
+      <div id="urlList" class="kw-list"></div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <!-- Home view (portada) -->
+    <div class="portada" id="emptyState" style="display:none">
+      <div class="portada-head">
+        <div class="portada-title">📊 <span id="portadaDomain">getlinko.com</span></div>
+        <div class="period-bar" id="periodBar">
+          <button class="period-btn active" onclick="setPeriod(7,this)">7D</button>
+          <button class="period-btn" onclick="setPeriod(30,this)">1M</button>
+          <button class="period-btn" onclick="setPeriod(90,this)">3M</button>
+          <button class="period-btn" onclick="setPeriod(180,this)">6M</button>
+          <button class="period-btn" onclick="setPeriod(365,this)">1Y</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadDashboard()" id="dashRefreshBtn">↻</button>
+      </div>
+      <div id="ahrefsMetrics">
+        <div style="color:var(--muted);font-size:13px">Cargando métricas Ahrefs...</div>
+      </div>
+      <div id="gscPanel"></div>
+      <div class="portada-foot">
+        <button class="btn btn-primary" onclick="setView('kw');openAdd()">+ Añadir keyword</button>
+        <button class="btn btn-secondary" onclick="setView('kw')">🔑 Ver posiciones KW</button>
+        <button class="btn btn-secondary" onclick="setView('urls')">📄 Analizar URLs</button>
+      </div>
+    </div>
+    <!-- KW view empty state -->
+    <div class="empty" id="kwEmptyState" style="display:none">
+      <div class="empty-icon">🔑</div>
+      <h2>Selecciona una keyword</h2>
+      <p>Elige una keyword del panel lateral para ver su evolución de posición, o añade una nueva.</p>
+    </div>
+    <div id="kwDetail" style="display:none"></div>
+    <div id="activityPanel" style="display:none;flex-direction:column;gap:18px;"></div>
+    <!-- URLs view -->
+    <div id="urlsPanel" style="display:none;flex-direction:column;gap:18px;padding:4px 0;"></div>
+    <!-- Reference view -->
+    <div id="refPanel" style="display:none;flex-direction:column;gap:24px;"></div>
+  </main>
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="overlay" id="addModal">
+  <div class="modal">
+    <h2 id="addTitle">Añadir keyword</h2>
+    <div class="grid2">
+      <div class="sec-title">Parámetros de búsqueda</div>
+      <div class="fg span2" id="kwCountryDropWrap">
+        <label>País (rellena Location, gl, hl y Dominio)</label>
+        <select id="kwCountryDrop" onchange="onKwCountryDrop(this.value)">
+          <option value="">— Seleccionar país —</option>
+        </select>
+      </div>
+      <div class="fg span2">
+        <label>Keyword (q) *</label>
+        <input id="f_q" placeholder="comprar backlinks">
+      </div>
+      <div class="fg">
+        <label>Engine</label>
+        <select id="f_engine">
+          <option value="google">Google</option>
+          <option value="bing">Bing</option>
+          <option value="yahoo">Yahoo</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Device</label>
+        <select id="f_device">
+          <option value="desktop">Desktop</option>
+          <option value="mobile">Mobile</option>
+          <option value="tablet">Tablet</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Location</label>
+        <input id="f_location" placeholder="Spain">
+      </div>
+      <div class="fg">
+        <label>Google Domain</label>
+        <input id="f_google_domain" placeholder="google.es">
+      </div>
+      <div class="fg">
+        <label>hl (interfaz)</label>
+        <input id="f_hl" placeholder="es" maxlength="5">
+      </div>
+      <div class="fg">
+        <label>gl (país)</label>
+        <input id="f_gl" placeholder="es" maxlength="5">
+      </div>
+      <div class="fg">
+        <label>Num resultados</label>
+        <select id="f_num">
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeAdd()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveKw()" id="saveBtn">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="overlay" id="settingsModal">
+  <div class="modal">
+    <h2>⚙ Ajustes</h2>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="fg">
+        <label>Dominio objetivo</label>
+        <input id="s_domain" placeholder="getlinko.com">
+      </div>
+      <div class="fg">
+        <label>SerpAPI Keys <span style="font-weight:400;color:var(--muted)">(se usan en orden, rotación automática)</span></label>
+        <div id="serpKeyRows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px"></div>
+        <button class="btn btn-ghost btn-sm" onclick="addSerpKeyRow()" style="align-self:flex-start;margin-top:2px">＋ Añadir key</button>
+      </div>
+      <div class="fg">
+        <label>Ahrefs API Key</label>
+        <input id="s_ahrefs" type="password" placeholder="tu_ahrefs_key">
+      </div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.6">
+        SerpAPI → <a href="https://serpapi.com" target="_blank" style="color:var(--blue)">serpapi.com</a> &nbsp;·&nbsp;
+        Ahrefs → <a href="https://app.ahrefs.com/account/api" target="_blank" style="color:var(--blue)">app.ahrefs.com/account/api</a>
+      </p>
+      <hr class="settings-sep">
+      <div class="settings-group-title">Google Search Console</div>
+      <div id="gscStatusBox" class="gsc-status">
+        <div class="gsc-dot" id="gscDot"></div>
+        <span id="gscStatusText">Comprobando...</span>
+      </div>
+      <hr class="settings-sep">
+      <div class="settings-group-title">🌍 Países predeterminados</div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.5">Activa los países que usas habitualmente. Aparecerán como accesos rápidos al añadir una keyword o URL.</p>
+      <input id="countrySettingsSearch" class="ref-search" placeholder="Buscar país..." oninput="filterCountrySettings(this.value)" style="margin-bottom:4px">
+      <div class="country-grid" id="countrySettingsGrid"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeSettings()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="overlay" id="importModal">
+  <div class="modal">
+    <h2>⬆ Importar Keywords</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+      Sube un CSV con columnas: <b style="color:var(--text)">engine, q, location, google_domain, hl, gl, device, num</b><br>
+      (igual que la captura de la hoja de cálculo)
+    </p>
+    <a href="/api/template" style="font-size:12px;color:var(--blue)">⬇ Descargar plantilla CSV</a>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept=".csv" onchange="handleFile(this.files[0])">
+      <div id="dropText">📂 Haz clic o arrastra un archivo CSV aquí</div>
+    </div>
+    <div id="importPreview"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeImport()">Cancelar</button>
+      <button class="btn btn-primary" onclick="doImport()" id="importBtn" disabled>Importar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD URL MODAL -->
+<div class="overlay" id="addUrlModal">
+  <div class="modal" style="max-width:420px">
+    <h2>📄 Añadir URL</h2>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:4px">
+      <div class="fg">
+        <label>URL completa</label>
+        <input id="fu_url" placeholder="https://getlinko.com/blog/mi-articulo" autocomplete="off">
+      </div>
+      <div class="fg">
+        <label>País</label>
+        <select id="urlCountryDrop" onchange="onUrlCountryDrop(this.value)">
+          <option value="">— Seleccionar país —</option>
+        </select>
+        <input type="hidden" id="fu_country">
+        <div id="countryPreview" style="font-size:12px;margin-top:5px;min-height:18px"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeAddUrl()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveUrl()" id="saveUrlBtn">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let keywords = [];
+let selectedId = null;
+let editingId = null;
+let chart = null;
+let period = 90;
+let importRows = [];
+let activeCountry = 'all';
+let activityOpen = false;
+let currentView = 'home';
+let urlPeriod = 7;
+let selectedUrl = null;   // full URL string of selected item
+let selectedUrlId = null; // id in the urls DB array
+let urls = [];              // saved URLs from /api/urls
+let activeCountries = [];  // GSC codes of user's selected countries
+
+// ─── UNIFIED COUNTRY DATA ─────────────────────────────────────────────────
+// gsc = ISO 3166-1 alpha-3 (used by GSC API)
+// loc = SerpAPI location string · gl/hl = SerpAPI params · dom = Google domain
+const COUNTRIES = [
+  {f:'🇪🇸',n:'España',          gsc:'esp',loc:'Spain',               gl:'es',hl:'es',dom:'google.es'},
+  {f:'🇲🇽',n:'México',          gsc:'mex',loc:'Mexico',              gl:'mx',hl:'es',dom:'google.com.mx'},
+  {f:'🇨🇴',n:'Colombia',        gsc:'col',loc:'Colombia',            gl:'co',hl:'es',dom:'google.com.co'},
+  {f:'🇦🇷',n:'Argentina',       gsc:'arg',loc:'Argentina',           gl:'ar',hl:'es',dom:'google.com.ar'},
+  {f:'🇵🇪',n:'Perú',            gsc:'per',loc:'Peru',                gl:'pe',hl:'es',dom:'google.com.pe'},
+  {f:'🇨🇱',n:'Chile',           gsc:'chl',loc:'Chile',               gl:'cl',hl:'es',dom:'google.cl'},
+  {f:'🇻🇪',n:'Venezuela',       gsc:'ven',loc:'Venezuela',           gl:'ve',hl:'es',dom:'google.co.ve'},
+  {f:'🇪🇨',n:'Ecuador',         gsc:'ecu',loc:'Ecuador',             gl:'ec',hl:'es',dom:'google.com.ec'},
+  {f:'🇧🇴',n:'Bolivia',         gsc:'bol',loc:'Bolivia',             gl:'bo',hl:'es',dom:'google.com.bo'},
+  {f:'🇵🇾',n:'Paraguay',        gsc:'pry',loc:'Paraguay',            gl:'py',hl:'es',dom:'google.com.py'},
+  {f:'🇺🇾',n:'Uruguay',         gsc:'ury',loc:'Uruguay',             gl:'uy',hl:'es',dom:'google.com.uy'},
+  {f:'🇨🇷',n:'Costa Rica',      gsc:'cri',loc:'Costa Rica',          gl:'cr',hl:'es',dom:'google.co.cr'},
+  {f:'🇵🇦',n:'Panamá',          gsc:'pan',loc:'Panama',              gl:'pa',hl:'es',dom:'google.com.pa'},
+  {f:'🇬🇹',n:'Guatemala',       gsc:'gtm',loc:'Guatemala',           gl:'gt',hl:'es',dom:'google.com.gt'},
+  {f:'🇭🇳',n:'Honduras',        gsc:'hnd',loc:'Honduras',            gl:'hn',hl:'es',dom:'google.com.hn'},
+  {f:'🇸🇻',n:'El Salvador',     gsc:'slv',loc:'El Salvador',         gl:'sv',hl:'es',dom:'google.com.sv'},
+  {f:'🇩🇴',n:'Rep. Dominicana', gsc:'dom',loc:'Dominican Republic',  gl:'do',hl:'es',dom:'google.com.do'},
+  {f:'🇳🇮',n:'Nicaragua',       gsc:'nic',loc:'Nicaragua',           gl:'ni',hl:'es',dom:'google.com.ni'},
+  {f:'🇵🇷',n:'Puerto Rico',     gsc:'pri',loc:'Puerto Rico',         gl:'us',hl:'es',dom:'google.com'},
+  {f:'🇨🇺',n:'Cuba',            gsc:'cub',loc:'Cuba',                gl:'cu',hl:'es',dom:'google.com.cu'},
+  {f:'🇺🇸',n:'EE.UU.',          gsc:'usa',loc:'United States',       gl:'us',hl:'en',dom:'google.com'},
+  {f:'🇬🇧',n:'Reino Unido',     gsc:'gbr',loc:'United Kingdom',      gl:'gb',hl:'en',dom:'google.co.uk'},
+  {f:'🇨🇦',n:'Canadá',          gsc:'can',loc:'Canada',              gl:'ca',hl:'en',dom:'google.ca'},
+  {f:'🇦🇺',n:'Australia',       gsc:'aus',loc:'Australia',           gl:'au',hl:'en',dom:'google.com.au'},
+  {f:'🇩🇪',n:'Alemania',        gsc:'deu',loc:'Germany',             gl:'de',hl:'de',dom:'google.de'},
+  {f:'🇫🇷',n:'Francia',         gsc:'fra',loc:'France',              gl:'fr',hl:'fr',dom:'google.fr'},
+  {f:'🇮🇹',n:'Italia',          gsc:'ita',loc:'Italy',               gl:'it',hl:'it',dom:'google.it'},
+  {f:'🇳🇱',n:'Países Bajos',    gsc:'nld',loc:'Netherlands',         gl:'nl',hl:'nl',dom:'google.nl'},
+  {f:'🇧🇪',n:'Bélgica',         gsc:'bel',loc:'Belgium',             gl:'be',hl:'fr',dom:'google.be'},
+  {f:'🇵🇹',n:'Portugal',        gsc:'prt',loc:'Portugal',            gl:'pt',hl:'pt',dom:'google.pt'},
+  {f:'🇧🇷',n:'Brasil',          gsc:'bra',loc:'Brazil',              gl:'br',hl:'pt',dom:'google.com.br'},
+  {f:'🇨🇭',n:'Suiza',           gsc:'che',loc:'Switzerland',         gl:'ch',hl:'de',dom:'google.ch'},
+  {f:'🇦🇹',n:'Austria',         gsc:'aut',loc:'Austria',             gl:'at',hl:'de',dom:'google.at'},
+  {f:'🇸🇪',n:'Suecia',          gsc:'swe',loc:'Sweden',              gl:'se',hl:'sv',dom:'google.se'},
+  {f:'🇳🇴',n:'Noruega',         gsc:'nor',loc:'Norway',              gl:'no',hl:'no',dom:'google.no'},
+  {f:'🇩🇰',n:'Dinamarca',       gsc:'dnk',loc:'Denmark',             gl:'dk',hl:'da',dom:'google.dk'},
+  {f:'🇵🇱',n:'Polonia',         gsc:'pol',loc:'Poland',              gl:'pl',hl:'pl',dom:'google.pl'},
+  {f:'🇷🇺',n:'Rusia',           gsc:'rus',loc:'Russia',              gl:'ru',hl:'ru',dom:'google.ru'},
+  {f:'🇹🇷',n:'Turquía',         gsc:'tur',loc:'Turkey',              gl:'tr',hl:'tr',dom:'google.com.tr'},
+  {f:'🇬🇷',n:'Grecia',          gsc:'grc',loc:'Greece',              gl:'gr',hl:'el',dom:'google.gr'},
+  {f:'🇷🇴',n:'Rumanía',         gsc:'rou',loc:'Romania',             gl:'ro',hl:'ro',dom:'google.ro'},
+  {f:'🇭🇺',n:'Hungría',         gsc:'hun',loc:'Hungary',             gl:'hu',hl:'hu',dom:'google.hu'},
+  {f:'🇨🇿',n:'Rep. Checa',      gsc:'cze',loc:'Czech Republic',      gl:'cz',hl:'cs',dom:'google.cz'},
+  {f:'🇵🇱',n:'Polonia',         gsc:'pol',loc:'Poland',              gl:'pl',hl:'pl',dom:'google.pl'},
+  {f:'🇺🇦',n:'Ucrania',         gsc:'ukr',loc:'Ukraine',             gl:'ua',hl:'uk',dom:'google.com.ua'},
+  {f:'🇫🇮',n:'Finlandia',       gsc:'fin',loc:'Finland',             gl:'fi',hl:'fi',dom:'google.fi'},
+  {f:'🇭🇷',n:'Croacia',         gsc:'hrv',loc:'Croatia',             gl:'hr',hl:'hr',dom:'google.hr'},
+  {f:'🇧🇬',n:'Bulgaria',        gsc:'bgr',loc:'Bulgaria',            gl:'bg',hl:'bg',dom:'google.bg'},
+  {f:'🇷🇸',n:'Serbia',          gsc:'srb',loc:'Serbia',              gl:'rs',hl:'sr',dom:'google.rs'},
+  {f:'🇸🇰',n:'Eslovaquia',      gsc:'svk',loc:'Slovakia',            gl:'sk',hl:'sk',dom:'google.sk'},
+  {f:'🇯🇵',n:'Japón',           gsc:'jpn',loc:'Japan',               gl:'jp',hl:'ja',dom:'google.co.jp'},
+  {f:'🇰🇷',n:'Corea del Sur',   gsc:'kor',loc:'South Korea',         gl:'kr',hl:'ko',dom:'google.co.kr'},
+  {f:'🇮🇳',n:'India',           gsc:'ind',loc:'India',               gl:'in',hl:'en',dom:'google.co.in'},
+  {f:'🇸🇬',n:'Singapur',        gsc:'sgp',loc:'Singapore',           gl:'sg',hl:'en',dom:'google.com.sg'},
+  {f:'🇲🇾',n:'Malasia',         gsc:'mys',loc:'Malaysia',            gl:'my',hl:'ms',dom:'google.com.my'},
+  {f:'🇵🇭',n:'Filipinas',       gsc:'phl',loc:'Philippines',         gl:'ph',hl:'tl',dom:'google.com.ph'},
+  {f:'🇮🇩',n:'Indonesia',       gsc:'idn',loc:'Indonesia',           gl:'id',hl:'id',dom:'google.co.id'},
+  {f:'🇻🇳',n:'Vietnam',         gsc:'vnm',loc:'Vietnam',             gl:'vn',hl:'vi',dom:'google.com.vn'},
+  {f:'🇹🇭',n:'Tailandia',       gsc:'tha',loc:'Thailand',            gl:'th',hl:'th',dom:'google.co.th'},
+  {f:'🇸🇦',n:'Arabia Saudí',    gsc:'sau',loc:'Saudi Arabia',        gl:'sa',hl:'ar',dom:'google.com.sa'},
+  {f:'🇦🇪',n:'Emiratos Árabes', gsc:'are',loc:'United Arab Emirates',gl:'ae',hl:'ar',dom:'google.ae'},
+  {f:'🇮🇱',n:'Israel',          gsc:'isr',loc:'Israel',              gl:'il',hl:'iw',dom:'google.co.il'},
+  {f:'🇪🇬',n:'Egipto',          gsc:'egy',loc:'Egypt',               gl:'eg',hl:'ar',dom:'google.com.eg'},
+  {f:'🇲🇦',n:'Marruecos',       gsc:'mar',loc:'Morocco',             gl:'ma',hl:'fr',dom:'google.co.ma'},
+  {f:'🇿🇦',n:'Sudáfrica',       gsc:'zaf',loc:'South Africa',        gl:'za',hl:'en',dom:'google.co.za'},
+  {f:'🇳🇬',n:'Nigeria',         gsc:'nga',loc:'Nigeria',             gl:'ng',hl:'en',dom:'google.com.ng'},
+  {f:'🇵🇰',n:'Pakistán',        gsc:'pak',loc:'Pakistan',            gl:'pk',hl:'ur',dom:'google.com.pk'},
+  {f:'🇮🇷',n:'Irán',            gsc:'irn',loc:'Iran',                gl:'ir',hl:'fa',dom:'google.com'},
+  {f:'🇰🇼',n:'Kuwait',          gsc:'kwt',loc:'Kuwait',              gl:'kw',hl:'ar',dom:'google.com.kw'},
+  {f:'🇶🇦',n:'Qatar',           gsc:'qat',loc:'Qatar',               gl:'qa',hl:'ar',dom:'google.com.qa'},
+];
+// Deduplicate (Polonia aparecía 2 veces)
+const _seen = new Set(); COUNTRIES.splice(0, COUNTRIES.length, ...COUNTRIES.filter(c => !_seen.has(c.gsc) && _seen.add(c.gsc)));
+
+function getCountryLabel(code) {
+  if (!code) return '🌍 All';
+  const c = COUNTRIES.find(x => x.gsc === code);
+  return c ? `${c.f} ${c.n}` : code.toUpperCase();
+}
+function getCountryByGsc(code) { return COUNTRIES.find(c => c.gsc === code); }
+
+// ─── INIT ──────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const [kws, settings, urlList] = await Promise.all([
+      api('/api/keywords'),
+      api('/api/settings'),
+      api('/api/urls').catch(() => []),
+    ]);
+    keywords = kws;
+    urls     = urlList;
+    activeCountries = settings.activeCountries || [];
+    // Auto-deduplicate on load (silent)
+    api('/api/keywords/deduplicate', { method: 'POST' }).then(r => {
+      if (r.removed > 0) {
+        api('/api/keywords').then(kws2 => { keywords = kws2; renderSidebar(); });
+        toast(`${r.removed} keyword${r.removed>1?'s':''} duplicada${r.removed>1?'s':''} eliminada${r.removed>1?'s':''}`, 'info');
+      }
+    }).catch(() => {});
+    const domain = settings.domain || 'getlinko.com';
+    document.getElementById('domainChip').textContent = domain;
+    document.getElementById('portadaDomain').textContent = domain;
+    if (!settings.apiKey && !(Array.isArray(settings.apiKeys) && settings.apiKeys.length)) {
+      setView('home');
+      openSettings();
+      toast('Configura tus API keys para empezar', 'info');
+    } else {
+      setView('home');
+    }
+    const urlP = new URLSearchParams(window.location.search);
+    if (urlP.get('gsc') === 'connected') { toast('Google Search Console conectado ✓', 'ok'); history.replaceState({}, '', '/'); loadGscPanel(); }
+    if (urlP.get('gsc') === 'error')     { toast('Error conectando GSC', 'err'); history.replaceState({}, '', '/'); }
+  } catch (e) {
+    toast('Error conectando con el servidor: ' + e.message, 'err');
+  }
+}
+
+// ─── VIEW SWITCHER ─────────────────────────────────────────────────────────
+function setView(view) {
+  currentView = view;
+  ['home','kw','urls'].forEach(v => {
+    document.getElementById(`tab-${v}`)?.classList.toggle('active', v === view);
+  });
+  const sidebar   = document.getElementById('sidebar');
+  const kwToolbar = document.getElementById('kwToolbar');
+  const sbKw      = document.getElementById('sbKw');
+  const sbUrls    = document.getElementById('sbUrls');
+
+  // Hide all main panels
+  document.getElementById('emptyState').style.display   = 'none';
+  document.getElementById('kwEmptyState').style.display = 'none';
+  document.getElementById('kwDetail').style.display     = 'none';
+  document.getElementById('activityPanel').style.display= 'none';
+  document.getElementById('urlsPanel').style.display    = 'none';
+  document.getElementById('refPanel').style.display     = 'none';
+  activityOpen = false; activityMode = null;
+  document.getElementById('logsBtn')?.classList.remove('btn-active');
+  document.getElementById('movementsBtn')?.classList.remove('btn-active');
+
+  if (view === 'home') {
+    sidebar.style.display      = 'none';
+    kwToolbar.style.display    = 'none';
+    document.getElementById('emptyState').style.display = 'flex';
+    loadDashboard();
+    loadGscPanel();
+
+  } else if (view === 'kw') {
+    sidebar.style.display   = 'flex';
+    kwToolbar.style.display = 'flex';
+    sbKw.style.display      = 'flex';
+    sbUrls.style.display    = 'none';
+    renderSidebar();
+    if (selectedId) {
+      document.getElementById('kwDetail').style.display = 'block';
+    } else {
+      document.getElementById('kwEmptyState').style.display = 'flex';
+    }
+
+  } else if (view === 'urls') {
+    sidebar.style.display   = 'flex';
+    kwToolbar.style.display = 'none';
+    sbKw.style.display      = 'none';
+    sbUrls.style.display    = 'flex';
+    loadUrlsView();
+
+  } else if (view === 'ref') {
+    sidebar.style.display   = 'none';
+    kwToolbar.style.display = 'none';
+    document.getElementById('refPanel').style.display = 'flex';
+    renderRefPanel();
+  }
+}
+
+// ─── API ───────────────────────────────────────────────────────────────────
+async function api(url, opts = {}) {
+  const r = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+// ─── COUNTRY CHIPS ────────────────────────────────────────────────────────
+function renderCountryChips() {
+  const locations = [...new Set(keywords.map(k => k.location || '—'))].sort();
+  const chips = document.getElementById('countryChips');
+  if (!chips) return;
+  chips.innerHTML = ['all', ...locations].map(loc => {
+    const isAll = loc === 'all';
+    return `<button class="cc ${isAll?'all':''} ${activeCountry===loc?'on':''}" onclick="setCountry('${loc.replace(/'/g,"\\'")}')">${isAll?'🌍 Todas':loc}</button>`;
+  }).join('');
+}
+
+function setCountry(loc) {
+  activeCountry = loc;
+  renderSidebar();
+}
+
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────
+function renderSidebar() {
+  const list = document.getElementById('kwList');
+  const searchVal = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
+
+  let filtered = keywords;
+  if (activeCountry !== 'all') filtered = filtered.filter(k => (k.location || '—') === activeCountry);
+  if (searchVal) filtered = filtered.filter(k => k.q.toLowerCase().includes(searchVal));
+
+  const activeCount = keywords.filter(k => k.active).length;
+  const shown = filtered.length;
+  document.getElementById('kwCount').textContent =
+    shown === keywords.length
+      ? `${keywords.length} kw (${activeCount} activas)`
+      : `${shown} de ${keywords.length} (filtradas)`;
+
+  renderCountryChips();
+
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">${keywords.length ? 'Sin resultados.' : 'Sin keywords aún.'}</div>`;
+    return;
+  }
+
+  const sorted = [...filtered].sort((a,b) => (b.active - a.active) || a.q.localeCompare(b.q));
+
+  list.innerHTML = sorted.map(kw => {
+    const lastEntry = (kw.history || [])[0]; // most recent entry (could be null position)
+    const last    = getLastPos(kw);
+
+    const posLabel = last === null ? 'N/A' : `#${last.position}`;
+    const posClass = last === null ? 'pos-na' : last.position <= 3 ? 'pos-good' : last.position <= 10 ? 'pos-mid' : 'pos-low';
+    const lastChecked = lastEntry ? `<span class="kw-tag" style="color:var(--muted)">✓ ${fmtDate(lastEntry.date)}</span>` : '';
+
+    // Previous → current trend indicator
+    const allHistory = (kw.history || []).slice().sort((a,b) => b.date.localeCompare(a.date));
+    const prevEntry  = allHistory.length >= 2 ? allHistory[1] : null; // second most recent (any position incl. null)
+    let trendHtml = '';
+
+    if (allHistory.length === 1) {
+      // Only one measurement ever → "New" only if it has a real position
+      if (last) trendHtml = `<span class="pos-new">New</span><span class="trend-arrow up" style="font-size:9px">→</span>`;
+    } else if (prevEntry) {
+      const curPos  = last ? last.position : null;
+      const prevPos = prevEntry.position;
+
+      if (prevPos === null && curPos !== null) {
+        // Was N/A → now ranking
+        trendHtml = `<span class="pos-prev">N/A</span><span class="trend-arrow up">↑</span>`;
+      } else if (prevPos !== null && curPos === null) {
+        // Was ranking → now N/A
+        trendHtml = `<span class="pos-prev">#${prevPos}</span><span class="trend-arrow down">↓</span>`;
+      } else if (prevPos !== null && curPos !== null) {
+        const diff = prevPos - curPos; // positive = improved (lower number)
+        if (diff > 0)      trendHtml = `<span class="pos-prev">#${prevPos}</span><span class="trend-arrow up">↑</span>`;
+        else if (diff < 0) trendHtml = `<span class="pos-prev">#${prevPos}</span><span class="trend-arrow down">↓</span>`;
+        else               trendHtml = `<span class="pos-prev">#${prevPos}</span><span class="trend-arrow flat">→</span>`;
+      }
+    }
+
+    return `
+    <div class="kw-item ${selectedId===kw.id?'active':''} ${!kw.active?'inactive':''}" onclick="selectKw(${kw.id})">
+      <div class="kw-top">
+        <div class="kw-q">${esc(kw.q)}</div>
+        <div style="display:flex;align-items:center;gap:4px">
+          ${trendHtml}
+          <div class="pos-badge ${posClass}">${posLabel}</div>
+        </div>
+      </div>
+      <div class="kw-meta">
+        <span class="kw-tag">${kw.location||'—'}</span>
+        <span class="kw-tag">${kw.device}</span>
+        <span class="kw-tag">${kw.engine}</span>
+        ${lastChecked}
+        ${!kw.active ? '<span class="kw-tag" style="color:var(--red)">paused</span>' : ''}
+      </div>
+      <div class="kw-btns">
+        <button class="btn btn-ghost btn-sm" title="Actualizar" onclick="ev(event);refreshKw(${kw.id})" id="rb_${kw.id}">↻</button>
+        <button class="btn btn-ghost btn-sm" title="${kw.active?'Pausar':'Activar'}" onclick="ev(event);toggleKw(${kw.id})">${kw.active?'⏸':'▶'}</button>
+        <button class="btn btn-ghost btn-sm" title="Editar" onclick="ev(event);editKw(${kw.id})">✎</button>
+        <button class="btn btn-danger btn-sm" title="Eliminar" onclick="ev(event);deleteKw(${kw.id})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function getLastPos(kw) {
+  const h = (kw.history || []).filter(x => x.position !== null);
+  return h.length ? h[0] : null; // history is DESC
+}
+
+// ─── SELECT / DETAIL ──────────────────────────────────────────────────────
+function selectKw(id) {
+  activityOpen = false;
+  activityMode = null;
+  document.getElementById('activityPanel').style.display = 'none';
+  document.getElementById('logsBtn').classList.remove('btn-active');
+  document.getElementById('movementsBtn').classList.remove('btn-active');
+  selectedId = id;
+  renderSidebar();
+  renderDetail();
+}
+
+function renderDetail() {
+  const kw = keywords.find(k => k.id === selectedId);
+  if (!kw) return;
+  document.getElementById('kwEmptyState').style.display = 'none';
+  const detail = document.getElementById('kwDetail');
+  detail.style.display = 'block';
+
+  const history = (kw.history || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+  const positions = history.filter(h => h.position !== null).map(h => h.position);
+  const last = getLastPos(kw);
+  const best = positions.length ? Math.min(...positions) : null;
+  const avg = positions.length ? Math.round(positions.reduce((a,b)=>a+b,0)/positions.length) : null;
+
+  detail.innerHTML = `
+    <div class="kw-header-card">
+      <div class="kw-header-title">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <h2 style="margin:0">${esc(kw.q)} ${!kw.active?'<span style="font-size:13px;color:var(--red);font-weight:400">(pausada)</span>':''}</h2>
+          <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${kw.q.replace(/'/g,"\\'")}').then(()=>toast('Copiado','ok'))" title="Copiar keyword" style="padding:4px 7px;font-size:14px">⎘</button>
+          <button class="btn btn-secondary btn-sm" id="refreshOneBtn" onclick="refreshOne(${kw.id})" title="Actualizar posición ahora vía SerpAPI">↻ Actualizar</button>
+          <button class="btn btn-ghost btn-sm" onclick="serpDebug(${kw.id})" title="Ver resultados crudos de SerpAPI" style="font-size:11px;color:var(--muted)">🔍 Debug</button>
+        </div>
+        <div style="margin-top:10px"></div>
+        <div class="params-row">
+          <span class="ptag"><b>Engine:</b> ${kw.engine}</span>
+          <span class="ptag"><b>Location:</b> ${kw.location||'—'}</span>
+          <span class="ptag"><b>hl:</b> ${kw.hl||'—'}</span>
+          <span class="ptag"><b>gl:</b> ${kw.gl||'—'}</span>
+          <span class="ptag"><b>Device:</b> ${kw.device}</span>
+          <span class="ptag"><b>Domain:</b> ${kw.google_domain||'—'}</span>
+        </div>
+      </div>
+      <div class="kw-stats">
+        <div class="stat"><div class="stat-val ${last===null?'na':''}">${last===null?'N/A':'#'+last.position}</div><div class="stat-lbl">Actual</div></div>
+        <div class="stat"><div class="stat-val ${best===null?'na':''}">${best===null?'N/A':'#'+best}</div><div class="stat-lbl">Mejor</div></div>
+        <div class="stat"><div class="stat-val ${avg===null?'na':''}">${avg===null?'N/A':'#'+avg}</div><div class="stat-lbl">Media</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Historial de posición</span>
+        <div class="period-btns">
+          ${[7,30,90,0].map(d=>`<button class="pbtn ${period===d?'active':''}" onclick="setChartPeriod(${d})">${d===0?'Todo':d+'d'}</button>`).join('')}
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="posChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Registro de mediciones</span></div>
+      <table>
+        <thead><tr><th>Fecha</th><th>Posición</th><th>Cambio</th><th>URL encontrada</th></tr></thead>
+        <tbody id="histBody"></tbody>
+      </table>
+    </div>
+  `;
+
+  renderChart(kw);
+  renderHistTable(kw);
+}
+
+function setChartPeriod(d) {
+  period = d;
+  document.querySelectorAll('.pbtn').forEach(b => {
+    const v = b.textContent === 'Todo' ? 0 : parseInt(b.textContent);
+    b.classList.toggle('active', v === d);
+  });
+  const kw = keywords.find(k => k.id === selectedId);
+  if (kw) renderChart(kw);
+}
+
+function getFilteredHistory(kw) {
+  const all = (kw.history||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+  if (period === 0) return all;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - period);
+  return all.filter(h => new Date(h.date) >= cutoff);
+}
+
+// ─── CHART ────────────────────────────────────────────────────────────────
+function renderChart(kw) {
+  if (chart) { chart.destroy(); chart = null; }
+  const canvas = document.getElementById('posChart');
+  if (!canvas) return;
+  const history = getFilteredHistory(kw);
+  if (!history.length) {
+    canvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:230px;color:var(--muted);font-size:13px">Sin datos para este período</div>';
+    return;
+  }
+  const labels = history.map(h => fmtDate(h.date));
+  const data = history.map(h => h.position); // null = N/A
+  const valid = data.filter(v=>v!==null);
+  const minY = valid.length ? Math.max(1, Math.min(...valid)-2) : 1;
+  const maxY = valid.length ? Math.min(100, Math.max(...valid)+4) : 20;
+
+  chart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: '#e8792a',
+        backgroundColor: 'rgba(232,121,42,0.07)',
+        borderWidth: 2.5,
+        pointRadius: data.map(v=>v!==null?4:0),
+        pointHoverRadius: 6,
+        pointBackgroundColor: data.map(v => v===null?'transparent':v<=3?'#22c55e':v<=10?'#eab308':'#ef4444'),
+        pointBorderColor: data.map(v=>v!==null?'#e8792a':'transparent'),
+        fill: true, tension: 0.35, spanGaps: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1d27', borderColor: '#2e3347', borderWidth: 1,
+          titleColor: '#e2e8f0', bodyColor: '#94a3b8',
+          callbacks: { label: ctx => ctx.parsed.y===null?' N/A — sin posición':` Posición: #${ctx.parsed.y}` }
+        }
+      },
+      scales: {
+        x: { grid:{color:'rgba(46,51,71,.5)'}, ticks:{color:'#64748b',font:{size:10},maxTicksLimit:12} },
+        y: {
+          reverse: true, min: minY, max: maxY,
+          grid: {color:'rgba(46,51,71,.5)'},
+          ticks: {color:'#64748b', font:{size:10}, callback:v=>'#'+v, maxTicksLimit:8}
+        }
+      }
+    }
+  });
+}
+
+// ─── HISTORY TABLE ────────────────────────────────────────────────────────
+function renderHistTable(kw) {
+  const tbody = document.getElementById('histBody');
+  if (!tbody) return;
+  const h = (kw.history||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if (!h.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:18px">Sin historial. Actualiza para registrar la primera medición.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = h.map((entry, i) => {
+    const prev = h[i+1];
+    let chg = '<span class="eq">—</span>';
+    if (entry.position!==null && prev && prev.position!==null) {
+      const d = prev.position - entry.position; // positive = improved
+      if (d>0) chg=`<span class="up">↑ +${d}</span>`;
+      else if (d<0) chg=`<span class="dn">↓ ${d}</span>`;
+    }
+    if (entry.position===null) {
+      return `<tr style="color:var(--muted);font-style:italic"><td>${fmtDate(entry.date)}</td><td><span class="pos-badge pos-na">N/A</span></td><td>—</td><td style="font-size:11px">No encontrado en SERP</td></tr>`;
+    }
+    const pc = entry.position<=3?'pos-good':entry.position<=10?'pos-mid':'pos-low';
+    return `<tr>
+      <td>${fmtDate(entry.date)}</td>
+      <td><span class="pos-badge ${pc}">#${entry.position}</span></td>
+      <td>${chg}</td>
+      <td class="url-cell">${entry.url?`<a href="${esc(entry.url)}" target="_blank" style="color:var(--blue)">${esc(entry.url)}</a>`:'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── REFRESH ─────────────────────────────────────────────────────────────
+async function refreshKw(id) {
+  const btn = document.getElementById(`rb_${id}`);
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="spin"></span>'; }
+  try {
+    const result = await api(`/api/keywords/${id}/refresh`, {method:'POST'});
+    const kw = keywords.find(k=>k.id===id);
+    if (kw) {
+      const today = result.date;
+      kw.history = kw.history.filter(h=>h.date!==today);
+      kw.history.unshift({date:today, position:result.position, url:result.url});
+    }
+    renderSidebar();
+    if (selectedId===id) renderDetail();
+    const q = keywords.find(k=>k.id===id)?.q||'';
+    toast(result.position ? `#${result.position} para "${q}"` : `"${q}" no encontrada en SERP`, result.position?'ok':'info');
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'err');
+  } finally {
+    if (btn) { btn.disabled=false; btn.innerHTML='↻'; }
+  }
+}
+
+async function refreshOne(id) {
+  const btn = document.getElementById('refreshOneBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+  try {
+    // Endpoint returns { position, url, date } — merge into history only
+    const result = await api(`/api/keywords/${id}/refresh`, { method: 'POST' });
+    const idx = keywords.findIndex(k => k.id === id);
+    if (idx !== -1) {
+      const kw = keywords[idx];
+      if (!kw.history) kw.history = [];
+      const hIdx = kw.history.findIndex(h => h.date === result.date);
+      const entry = { date: result.date, position: result.position, url: result.url };
+      if (hIdx >= 0) kw.history[hIdx] = entry;
+      else kw.history.unshift(entry);
+    }
+    selectedId = id;
+    renderSidebar();
+    renderDetail();
+    toast('Posición actualizada', 'ok');
+  } catch(e) {
+    toast('Error: ' + e.message, 'err');
+  } finally {
+    // Re-query button after renderDetail (it creates a fresh one)
+    const freshBtn = document.getElementById('refreshOneBtn');
+    if (freshBtn) { freshBtn.disabled = false; freshBtn.innerHTML = '↻ Actualizar'; }
+  }
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refreshAllBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Actualizando...';
+  // If a country filter is active, only refresh those IDs
+  const searchVal = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
+  let filtered = keywords.filter(k => k.active);
+  if (activeCountry !== 'all') filtered = filtered.filter(k => (k.location||'—') === activeCountry);
+  if (searchVal) filtered = filtered.filter(k => k.q.toLowerCase().includes(searchVal));
+  const ids = filtered.map(k => k.id);
+  try {
+    const results = await api('/api/refresh-all', {method:'POST', body: JSON.stringify({ids})});
+    const ok = results.filter(r=>r.ok).length;
+    const fail = results.filter(r=>!r.ok).length;
+    // Reload all keywords to get updated history
+    keywords = await api('/api/keywords');
+    renderSidebar();
+    if (selectedId) renderDetail();
+    toast(`Actualizado: ${ok} ok${fail?`, ${fail} errores`:''}`, fail?'err':'ok');
+    if (activityOpen) renderActivity();
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'err');
+  } finally {
+    btn.disabled=false; btn.innerHTML='↻ Actualizar visibles';
+  }
+}
+
+// ─── TOGGLE / DELETE ──────────────────────────────────────────────────────
+async function toggleKw(id) {
+  try {
+    const r = await api(`/api/keywords/${id}/toggle`, {method:'POST'});
+    const kw = keywords.find(k=>k.id===id);
+    if (kw) kw.active = r.active;
+    renderSidebar();
+    if (selectedId===id) renderDetail();
+    toast(r.active ? 'Keyword activada' : 'Keyword pausada', 'ok');
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function deleteKw(id) {
+  if (!confirm('¿Eliminar esta keyword y todo su historial?')) return;
+  try {
+    await api(`/api/keywords/${id}`, {method:'DELETE'});
+    keywords = keywords.filter(k=>k.id!==id);
+    if (selectedId===id) {
+      selectedId=null;
+      document.getElementById('kwEmptyState').style.display='flex';
+      document.getElementById('kwDetail').style.display='none';
+    }
+    renderSidebar();
+    toast('Keyword eliminada', 'ok');
+  } catch(e) { toast(e.message,'err'); }
+}
+
+// ─── ADD / EDIT ───────────────────────────────────────────────────────────
+function openAdd() {
+  editingId=null;
+  document.getElementById('addTitle').textContent='Añadir keyword';
+  setForm({engine:'google',q:'',location:'Spain',google_domain:'google.es',hl:'es',gl:'es',device:'desktop',num:'100'});
+  buildCountryOptions('kwCountryDrop');
+  document.getElementById('kwCountryDrop').value = '';
+  document.getElementById('addModal').classList.add('show');
+  setTimeout(()=>document.getElementById('f_q').focus(),80);
+}
+function editKw(id) {
+  const kw=keywords.find(k=>k.id===id); if(!kw)return;
+  editingId=id;
+  document.getElementById('addTitle').textContent='Editar keyword';
+  setForm(kw);
+  document.getElementById('addModal').classList.add('show');
+}
+function setForm(kw) {
+  ['q','engine','device','location','google_domain','hl','gl','num'].forEach(f=>{
+    document.getElementById('f_'+f).value = kw[f]||'';
+  });
+}
+function closeAdd() { document.getElementById('addModal').classList.remove('show'); }
+
+async function saveKw() {
+  const q = document.getElementById('f_q').value.trim();
+  if (!q) { toast('La keyword es obligatoria','err'); return; }
+  const body = {
+    q, engine:document.getElementById('f_engine').value,
+    device:document.getElementById('f_device').value,
+    location:document.getElementById('f_location').value.trim(),
+    google_domain:document.getElementById('f_google_domain').value.trim(),
+    hl:document.getElementById('f_hl').value.trim(),
+    gl:document.getElementById('f_gl').value.trim(),
+    num:document.getElementById('f_num').value
+  };
+  const btn=document.getElementById('saveBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try {
+    if (editingId) {
+      await api(`/api/keywords/${editingId}`,{method:'PUT',body:JSON.stringify(body)});
+      const kw=keywords.find(k=>k.id===editingId);
+      if(kw) Object.assign(kw,body);
+    } else {
+      // Check duplicate before saving
+      const loc = body.location.toLowerCase();
+      const dup = keywords.find(k => k.q.toLowerCase() === q.toLowerCase() && (k.location||k.gl||'').toLowerCase() === loc);
+      if (dup) {
+        const added = dup.created_at || (dup.history&&dup.history.length ? dup.history[0].date : '—');
+        toast(`"${q}" ya existe en este país (añadida el ${added})`, 'info', 5000);
+        closeAdd();
+        selectedId = dup.id; renderSidebar(); renderDetail();
+        return;
+      }
+      const kw=await api('/api/keywords',{method:'POST',body:JSON.stringify(body)});
+      keywords.push(kw);
+    }
+    renderSidebar();
+    if (editingId && selectedId===editingId) renderDetail();
+    closeAdd();
+    toast(editingId?'Keyword actualizada':'Keyword añadida','ok');
+  } catch(e) { toast(e.message,'err'); }
+  finally { btn.disabled=false; btn.innerHTML='Guardar'; }
+}
+
+// ─── GSC ──────────────────────────────────────────────────────────────────
+let gscTab = 'queries';
+
+async function updateGscStatus() {
+  try {
+    const { connected, email } = await api('/api/gsc/status');
+    const dot = document.getElementById('gscDot');
+    const txt = document.getElementById('gscStatusText');
+    if (!dot) return;
+    if (connected) {
+      dot.classList.add('on');
+      txt.textContent = `Conectado · ${email || 'Service Account'}`;
+    } else {
+      dot.classList.remove('on');
+      txt.textContent = 'No conectado — verifica service-account.json';
+    }
+  } catch(e) {}
+}
+
+async function loadGscPanel() {
+  const panel = document.getElementById('gscPanel');
+  if (!panel) return;
+
+  const { connected } = await api('/api/gsc/status').catch(() => ({ connected: false }));
+  if (!connected) {
+    panel.innerHTML = `<div class="gsc-connect-box">
+      <b>Google Search Console</b> no conectado —
+      ve a <button class="btn btn-ghost btn-sm" onclick="openSettings()" style="margin:0 4px">⚙ Ajustes</button> para conectarlo y ver tus queries e impresiones reales.
+    </div>`;
+    return;
+  }
+
+  panel.innerHTML = `<div class="gsc-section">
+    <div class="gsc-tabs">
+      <button class="gsc-tab ${gscTab==='queries'?'active':''}" onclick="setGscTab('queries')">🔍 Queries</button>
+      <button class="gsc-tab ${gscTab==='pages'?'active':''}" onclick="setGscTab('pages')">📄 Páginas</button>
+    </div>
+    <div id="gscContent"><div style="color:var(--muted);font-size:13px;padding:8px 0">Cargando...</div></div>
+  </div>`;
+
+  loadGscContent();
+}
+
+async function loadGscContent() {
+  const box = document.getElementById('gscContent');
+  if (!box) return;
+  box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Cargando...</div>';
+  try {
+    const endpoint = gscTab === 'queries' ? '/api/gsc/queries' : '/api/gsc/pages';
+    const rows = await api(`${endpoint}?days=${dashPeriod < 7 ? 7 : dashPeriod}`);
+    if (!rows.length) { box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Sin datos para este período.</div>'; return; }
+
+    const isQ = gscTab === 'queries';
+    box.innerHTML = `<div style="overflow-x:auto"><table class="gsc-table">
+      <thead><tr>
+        <th>${isQ ? 'Query' : 'URL'}</th>
+        <th style="text-align:right">Clics</th>
+        <th style="text-align:right">Impresiones</th>
+        <th style="text-align:right">CTR</th>
+        <th style="text-align:right">Posición</th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const label = isQ ? r.query : `<span class="gsc-url" title="${r.page}">${r.page.replace(/^https?:\/\/[^/]+/,'')}</span>`;
+        const posColor = r.position <= 3 ? 'var(--green)' : r.position <= 10 ? 'var(--yellow)' : 'var(--muted)';
+        return `<tr>
+          <td>${label}</td>
+          <td class="num">${r.clicks.toLocaleString()}</td>
+          <td class="num">${r.impressions.toLocaleString()}</td>
+          <td class="num">${r.ctr}%</td>
+          <td class="pos" style="color:${posColor}">${r.position}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+  } catch(e) {
+    box.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">Error: ${e.message}</div>`;
+  }
+}
+
+function setGscTab(tab) {
+  gscTab = tab;
+  document.querySelectorAll('.gsc-tab').forEach(b => b.classList.toggle('active', b.textContent.includes(tab === 'queries' ? 'Queries' : 'Páginas')));
+  loadGscContent();
+}
+
+// ─── REFERENCE PANEL ──────────────────────────────────────────────────────
+const GSC_COUNTRIES = [
+  {f:'🇪🇸',n:'España',c:'esp'},{f:'🇲🇽',n:'México',c:'mex'},{f:'🇨🇴',n:'Colombia',c:'col'},
+  {f:'🇦🇷',n:'Argentina',c:'arg'},{f:'🇵🇪',n:'Perú',c:'per'},{f:'🇨🇱',n:'Chile',c:'chl'},
+  {f:'🇻🇪',n:'Venezuela',c:'ven'},{f:'🇪🇨',n:'Ecuador',c:'ecu'},{f:'🇧🇴',n:'Bolivia',c:'bol'},
+  {f:'🇵🇾',n:'Paraguay',c:'pry'},{f:'🇺🇾',n:'Uruguay',c:'ury'},{f:'🇨🇷',n:'Costa Rica',c:'cri'},
+  {f:'🇵🇦',n:'Panamá',c:'pan'},{f:'🇬🇹',n:'Guatemala',c:'gtm'},{f:'🇭🇳',n:'Honduras',c:'hnd'},
+  {f:'🇸🇻',n:'El Salvador',c:'slv'},{f:'🇩🇴',n:'Rep. Dominicana',c:'dom'},{f:'🇳🇮',n:'Nicaragua',c:'nic'},
+  {f:'🇵🇷',n:'Puerto Rico',c:'pri'},{f:'🇨🇺',n:'Cuba',c:'cub'},
+  {f:'🇺🇸',n:'Estados Unidos',c:'usa'},{f:'🇬🇧',n:'Reino Unido',c:'gbr'},{f:'🇩🇪',n:'Alemania',c:'deu'},
+  {f:'🇫🇷',n:'Francia',c:'fra'},{f:'🇮🇹',n:'Italia',c:'ita'},{f:'🇳🇱',n:'Países Bajos',c:'nld'},
+  {f:'🇧🇪',n:'Bélgica',c:'bel'},{f:'🇵🇹',n:'Portugal',c:'prt'},{f:'🇧🇷',n:'Brasil',c:'bra'},
+  {f:'🇨🇭',n:'Suiza',c:'che'},{f:'🇦🇹',n:'Austria',c:'aut'},{f:'🇸🇪',n:'Suecia',c:'swe'},
+  {f:'🇳🇴',n:'Noruega',c:'nor'},{f:'🇩🇰',n:'Dinamarca',c:'dnk'},{f:'🇵🇱',n:'Polonia',c:'pol'},
+  {f:'🇹🇷',n:'Turquía',c:'tur'},{f:'🇦🇺',n:'Australia',c:'aus'},{f:'🇨🇦',n:'Canadá',c:'can'},
+  {f:'🇯🇵',n:'Japón',c:'jpn'},{f:'🇰🇷',n:'Corea del Sur',c:'kor'},{f:'🇮🇳',n:'India',c:'ind'},
+  {f:'🇨🇳',n:'China',c:'chn'},{f:'🇲🇾',n:'Malasia',c:'mys'},{f:'🇵🇭',n:'Filipinas',c:'phl'},
+  {f:'🇸🇬',n:'Singapur',c:'sgp'},{f:'🇮🇩',n:'Indonesia',c:'idn'},{f:'🇿🇦',n:'Sudáfrica',c:'zaf'},
+  {f:'🇲🇦',n:'Marruecos',c:'mar'},{f:'🇬🇷',n:'Grecia',c:'grc'},{f:'🇷🇴',n:'Rumanía',c:'rou'},
+  {f:'🇭🇺',n:'Hungría',c:'hun'},{f:'🇨🇿',n:'República Checa',c:'cze'},{f:'🇸🇰',n:'Eslovaquia',c:'svk'},
+  {f:'🇺🇦',n:'Ucrania',c:'ukr'},{f:'🇷🇺',n:'Rusia',c:'rus'},{f:'🇮🇱',n:'Israel',c:'isr'},
+  {f:'🇸🇦',n:'Arabia Saudí',c:'sau'},{f:'🇦🇪',n:'Emiratos Árabes',c:'are'},{f:'🇰🇼',n:'Kuwait',c:'kwt'},
+  {f:'🇶🇦',n:'Qatar',c:'qat'},{f:'🇧🇭',n:'Bahréin',c:'bhr'},{f:'🇴🇲',n:'Omán',c:'omn'},
+  {f:'🇪🇬',n:'Egipto',c:'egy'},{f:'🇳🇬',n:'Nigeria',c:'nga'},{f:'🇮🇷',n:'Irán',c:'irn'},
+  {f:'🇵🇰',n:'Pakistán',c:'pak'},{f:'🇧🇩',n:'Bangladesh',c:'bgd'},{f:'🇻🇳',n:'Vietnam',c:'vnm'},
+  {f:'🇹🇭',n:'Tailandia',c:'tha'},{f:'🇲🇽',n:'México',c:'mex'},
+  {f:'🇫🇮',n:'Finlandia',c:'fin'},{f:'🇭🇷',n:'Croacia',c:'hrv'},{f:'🇸🇮',n:'Eslovenia',c:'svn'},
+  {f:'🇧🇬',n:'Bulgaria',c:'bgr'},{f:'🇱🇹',n:'Lituania',c:'ltu'},{f:'🇱🇻',n:'Letonia',c:'lva'},
+  {f:'🇪🇪',n:'Estonia',c:'est'},{f:'🇷🇸',n:'Serbia',c:'srb'},{f:'🇧🇦',n:'Bosnia-Herz.',c:'bih'},
+  {f:'🇲🇰',n:'Macedonia del Norte',c:'mkd'},
+];
+
+const SERP_COUNTRIES = [
+  {f:'🇪🇸',n:'España',       loc:'Spain',              gl:'es', hl:'es', dom:'google.es'},
+  {f:'🇲🇽',n:'México',       loc:'Mexico',             gl:'mx', hl:'es', dom:'google.com.mx'},
+  {f:'🇨🇴',n:'Colombia',     loc:'Colombia',           gl:'co', hl:'es', dom:'google.com.co'},
+  {f:'🇦🇷',n:'Argentina',    loc:'Argentina',          gl:'ar', hl:'es', dom:'google.com.ar'},
+  {f:'🇵🇪',n:'Perú',         loc:'Peru',               gl:'pe', hl:'es', dom:'google.com.pe'},
+  {f:'🇨🇱',n:'Chile',        loc:'Chile',              gl:'cl', hl:'es', dom:'google.cl'},
+  {f:'🇻🇪',n:'Venezuela',    loc:'Venezuela',          gl:'ve', hl:'es', dom:'google.co.ve'},
+  {f:'🇪🇨',n:'Ecuador',      loc:'Ecuador',            gl:'ec', hl:'es', dom:'google.com.ec'},
+  {f:'🇧🇴',n:'Bolivia',      loc:'Bolivia',            gl:'bo', hl:'es', dom:'google.com.bo'},
+  {f:'🇵🇾',n:'Paraguay',     loc:'Paraguay',           gl:'py', hl:'es', dom:'google.com.py'},
+  {f:'🇺🇾',n:'Uruguay',      loc:'Uruguay',            gl:'uy', hl:'es', dom:'google.com.uy'},
+  {f:'🇨🇷',n:'Costa Rica',   loc:'Costa Rica',         gl:'cr', hl:'es', dom:'google.co.cr'},
+  {f:'🇵🇦',n:'Panamá',       loc:'Panama',             gl:'pa', hl:'es', dom:'google.com.pa'},
+  {f:'🇬🇹',n:'Guatemala',    loc:'Guatemala',          gl:'gt', hl:'es', dom:'google.com.gt'},
+  {f:'🇭🇳',n:'Honduras',     loc:'Honduras',           gl:'hn', hl:'es', dom:'google.com.hn'},
+  {f:'🇸🇻',n:'El Salvador',  loc:'El Salvador',        gl:'sv', hl:'es', dom:'google.com.sv'},
+  {f:'🇩🇴',n:'Rep. Dominicana',loc:'Dominican Republic',gl:'do',hl:'es', dom:'google.com.do'},
+  {f:'🇳🇮',n:'Nicaragua',    loc:'Nicaragua',          gl:'ni', hl:'es', dom:'google.com.ni'},
+  {f:'🇵🇷',n:'Puerto Rico',  loc:'Puerto Rico',        gl:'us', hl:'es', dom:'google.com'},
+  {f:'🇺🇸',n:'EE.UU.',       loc:'United States',      gl:'us', hl:'en', dom:'google.com'},
+  {f:'🇬🇧',n:'Reino Unido',  loc:'United Kingdom',     gl:'gb', hl:'en', dom:'google.co.uk'},
+  {f:'🇩🇪',n:'Alemania',     loc:'Germany',            gl:'de', hl:'de', dom:'google.de'},
+  {f:'🇫🇷',n:'Francia',      loc:'France',             gl:'fr', hl:'fr', dom:'google.fr'},
+  {f:'🇮🇹',n:'Italia',       loc:'Italy',              gl:'it', hl:'it', dom:'google.it'},
+  {f:'🇳🇱',n:'Países Bajos', loc:'Netherlands',        gl:'nl', hl:'nl', dom:'google.nl'},
+  {f:'🇧🇪',n:'Bélgica',      loc:'Belgium',            gl:'be', hl:'fr', dom:'google.be'},
+  {f:'🇵🇹',n:'Portugal',     loc:'Portugal',           gl:'pt', hl:'pt', dom:'google.pt'},
+  {f:'🇧🇷',n:'Brasil',       loc:'Brazil',             gl:'br', hl:'pt', dom:'google.com.br'},
+  {f:'🇨🇭',n:'Suiza',        loc:'Switzerland',        gl:'ch', hl:'de', dom:'google.ch'},
+  {f:'🇦🇹',n:'Austria',      loc:'Austria',            gl:'at', hl:'de', dom:'google.at'},
+  {f:'🇸🇪',n:'Suecia',       loc:'Sweden',             gl:'se', hl:'sv', dom:'google.se'},
+  {f:'🇳🇴',n:'Noruega',      loc:'Norway',             gl:'no', hl:'no', dom:'google.no'},
+  {f:'🇩🇰',n:'Dinamarca',    loc:'Denmark',            gl:'dk', hl:'da', dom:'google.dk'},
+  {f:'🇵🇱',n:'Polonia',      loc:'Poland',             gl:'pl', hl:'pl', dom:'google.pl'},
+  {f:'🇷🇺',n:'Rusia',        loc:'Russia',             gl:'ru', hl:'ru', dom:'google.ru'},
+  {f:'🇹🇷',n:'Turquía',      loc:'Turkey',             gl:'tr', hl:'tr', dom:'google.com.tr'},
+  {f:'🇦🇺',n:'Australia',    loc:'Australia',          gl:'au', hl:'en', dom:'google.com.au'},
+  {f:'🇨🇦',n:'Canadá',       loc:'Canada',             gl:'ca', hl:'en', dom:'google.ca'},
+  {f:'🇯🇵',n:'Japón',        loc:'Japan',              gl:'jp', hl:'ja', dom:'google.co.jp'},
+  {f:'🇰🇷',n:'Corea del Sur',loc:'South Korea',        gl:'kr', hl:'ko', dom:'google.co.kr'},
+  {f:'🇮🇳',n:'India',        loc:'India',              gl:'in', hl:'en', dom:'google.co.in'},
+  {f:'🇸🇦',n:'Arabia Saudí', loc:'Saudi Arabia',       gl:'sa', hl:'ar', dom:'google.com.sa'},
+  {f:'🇦🇪',n:'Emiratos Árabes',loc:'United Arab Emirates',gl:'ae',hl:'ar',dom:'google.ae'},
+  {f:'🇲🇦',n:'Marruecos',    loc:'Morocco',            gl:'ma', hl:'fr', dom:'google.co.ma'},
+  {f:'🇿🇦',n:'Sudáfrica',    loc:'South Africa',       gl:'za', hl:'en', dom:'google.co.za'},
+  {f:'🇸🇬',n:'Singapur',     loc:'Singapore',          gl:'sg', hl:'en', dom:'google.com.sg'},
+  {f:'🇲🇾',n:'Malasia',      loc:'Malaysia',           gl:'my', hl:'ms', dom:'google.com.my'},
+  {f:'🇵🇭',n:'Filipinas',    loc:'Philippines',        gl:'ph', hl:'tl', dom:'google.com.ph'},
+  {f:'🇮🇩',n:'Indonesia',    loc:'Indonesia',          gl:'id', hl:'id', dom:'google.co.id'},
+  {f:'🇻🇳',n:'Vietnam',      loc:'Vietnam',            gl:'vn', hl:'vi', dom:'google.com.vn'},
+  {f:'🇹🇭',n:'Tailandia',    loc:'Thailand',           gl:'th', hl:'th', dom:'google.co.th'},
+  {f:'🇬🇷',n:'Grecia',       loc:'Greece',             gl:'gr', hl:'el', dom:'google.gr'},
+  {f:'🇷🇴',n:'Rumanía',      loc:'Romania',            gl:'ro', hl:'ro', dom:'google.ro'},
+  {f:'🇭🇺',n:'Hungría',      loc:'Hungary',            gl:'hu', hl:'hu', dom:'google.hu'},
+  {f:'🇨🇿',n:'Rep. Checa',   loc:'Czech Republic',     gl:'cz', hl:'cs', dom:'google.cz'},
+  {f:'🇸🇰',n:'Eslovaquia',   loc:'Slovakia',           gl:'sk', hl:'sk', dom:'google.sk'},
+  {f:'🇺🇦',n:'Ucrania',      loc:'Ukraine',            gl:'ua', hl:'uk', dom:'google.com.ua'},
+  {f:'🇮🇱',n:'Israel',       loc:'Israel',             gl:'il', hl:'iw', dom:'google.co.il'},
+  {f:'🇮🇷',n:'Irán',         loc:'Iran',               gl:'ir', hl:'fa', dom:'google.com'},
+  {f:'🇵🇰',n:'Pakistán',     loc:'Pakistan',           gl:'pk', hl:'ur', dom:'google.com.pk'},
+  {f:'🇫🇮',n:'Finlandia',    loc:'Finland',            gl:'fi', hl:'fi', dom:'google.fi'},
+  {f:'🇪🇬',n:'Egipto',       loc:'Egypt',              gl:'eg', hl:'ar', dom:'google.com.eg'},
+];
+
+let _refRendered = false;
+
+function renderRefPanel() {
+  if (_refRendered) return; // solo renderiza una vez
+  _refRendered = true;
+  const panel = document.getElementById('refPanel');
+  if (!panel) return;
+
+  const gscRows = COUNTRIES.map(r => `
+    <tr data-name="${r.n.toLowerCase()}" data-code="${r.gsc}">
+      <td>${r.f}</td>
+      <td>${r.n}</td>
+      <td class="code">${r.gsc}</td>
+      <td><button class="copy-btn" onclick="copyRef(this,'${r.gsc}')">📋 Copiar</button></td>
+    </tr>`).join('');
+
+  const serpRows = COUNTRIES.map(r => `
+    <tr data-name="${r.n.toLowerCase()}" data-loc="${r.loc.toLowerCase()}">
+      <td>${r.f}</td>
+      <td>${r.n}</td>
+      <td class="code"><button class="copy-btn" onclick="copyRef(this,'${r.loc}')" title="Copiar location">${r.loc} 📋</button></td>
+      <td class="code">${r.gl}</td>
+      <td class="code">${r.hl}</td>
+      <td class="muted">${r.dom}</td>
+      <td><button class="copy-btn" onclick="copyRef(this,'${r.dom}')" title="Copiar dominio">📋</button></td>
+    </tr>`).join('');
+
+  panel.innerHTML = `
+    <div class="ref-section">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2>🔍 Google Search Console — Códigos de país</h2>
+        <input class="ref-search" placeholder="Buscar país o código..." oninput="filterRef('gsc',this.value)" style="max-width:260px">
+      </div>
+      <p style="font-size:12px;color:var(--muted)">Usa estas 3 letras al añadir una URL en "Análisis URLs". Pulsa <b style="color:var(--text)">Copiar</b> para llevar el código al portapapeles.</p>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto;max-height:420px;overflow-y:auto">
+          <table class="ref-table" id="gscTable">
+            <thead><tr><th></th><th>País</th><th>Código GSC</th><th></th></tr></thead>
+            <tbody>${gscRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="ref-section">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2>📡 SerpAPI — Parámetros por país</h2>
+        <input class="ref-search" placeholder="Buscar país o location..." oninput="filterRef('serp',this.value)" style="max-width:260px">
+      </div>
+      <p style="font-size:12px;color:var(--muted)">Parámetros para configurar cada keyword. Pulsa 📋 en <b style="color:var(--text)">Location</b> o <b style="color:var(--text)">Dominio</b> para copiar el valor exacto.</p>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="overflow-x:auto;max-height:520px;overflow-y:auto">
+          <table class="ref-table" id="serpTable">
+            <thead><tr><th></th><th>País</th><th>Location</th><th>gl</th><th>hl</th><th>Google Domain</th><th></th></tr></thead>
+            <tbody>${serpRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+function filterRef(type, val) {
+  const term  = val.toLowerCase().trim();
+  const table = document.getElementById(type === 'gsc' ? 'gscTable' : 'serpTable');
+  if (!table) return;
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    const name = tr.dataset.name || '';
+    const code = tr.dataset.code || tr.dataset.loc || '';
+    tr.style.display = (!term || name.includes(term) || code.includes(term)) ? '' : 'none';
+  });
+}
+
+function copyRef(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.classList.add('copied');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✓ Copiado';
+    setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1500);
+  }).catch(() => toast('No se pudo copiar', 'err'));
+}
+
+// ─── URL ANALYSIS VIEW ────────────────────────────────────────────────────
+function setUrlPeriod(days, btn) {
+  urlPeriod = days;
+  document.querySelectorAll('#urlPeriodBar .period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (selectedUrl) selectUrl(selectedUrl, selectedUrlId);
+}
+
+async function loadUrlsView() {
+  const list  = document.getElementById('urlList');
+  const panel = document.getElementById('urlsPanel');
+  panel.style.display = 'flex';
+  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Cargando...</div>';
+  panel.innerHTML = '<div class="empty" style="height:100%"><div class="empty-icon">📄</div><h2>Análisis de URLs</h2><p>Añade una URL con su país y verás sus queries, clics e impresiones desde Google Search Console.</p></div>';
+
+  try {
+    urls = await api('/api/urls');
+    renderUrlSidebar();
+    // Restore previous selection or show empty state
+    if (selectedUrlId && urls.find(u => u.id === selectedUrlId)) {
+      selectUrl(selectedUrl, selectedUrlId);
+    }
+  } catch(e) {
+    list.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderUrlSidebar() {
+  const list = document.getElementById('urlList');
+  document.getElementById('urlCount').textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''}`;
+  if (!urls.length) {
+    list.innerHTML = '<div style="padding:24px 16px;text-align:center;color:var(--muted);font-size:13px;line-height:1.6">Sin URLs aún.<br>Pulsa <b style="color:var(--text)">+ Añadir</b> para empezar.</div>';
+    return;
+  }
+  list.innerHTML = urls.map(u => {
+    const slug = u.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+    const countryLabel = getCountryLabel(u.country);
+    return `<div class="url-item ${selectedUrlId === u.id ? 'active' : ''}" onclick="selectUrl('${esc(u.url)}',${u.id})">
+      <div class="kw-top">
+        <div class="url-slug" title="${esc(u.url)}">${esc(slug)}</div>
+        <span class="kw-tag" style="font-size:11px;flex-shrink:0">${countryLabel}</span>
+      </div>
+      <div class="kw-btns">
+        <button class="btn btn-danger btn-sm" title="Eliminar" onclick="ev(event);deleteUrl(${u.id})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function selectUrl(url, id) {
+  selectedUrl   = url;
+  selectedUrlId = id;
+  renderUrlSidebar();  // re-render to update active state
+
+  const urlObj  = urls.find(u => u.id === id);
+  const country = urlObj?.country || '';
+  const slug    = url.replace(/^https?:\/\/[^/]+/, '') || '/';
+  const countryLabel = country ? getCountryLabel(country) : 'Todos los países';
+  const panel   = document.getElementById('urlsPanel');
+
+  // Saved KW for this URL+country
+  const urlKey = `monitorKw_${url}_${country}`;
+  let savedKw  = localStorage.getItem(urlKey) || '';
+
+  panel.innerHTML = `
+    <div class="url-detail-head">
+      <div class="url-detail-path">📄 ${esc(slug)}</div>
+      <div style="font-size:12px;color:var(--muted)">País: <b style="color:var(--text)">${countryLabel}</b> &nbsp;·&nbsp; Período: <b style="color:var(--text)">${urlPeriod}D</b></div>
+      <div class="url-stats-row" id="urlSummaryRow">
+        <div style="color:var(--muted);font-size:13px">Cargando resumen...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title" id="urlChartTitle">📈 Evolución — top keywords</span>
+      </div>
+      <div id="urlMetricToggles" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px"></div>
+      <div id="urlChartBox" style="padding:0 16px 16px;position:relative;height:220px">
+        <span style="color:var(--muted);font-size:13px">Cargando...</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🔍 Queries para esta URL</span>
+        <button class="btn btn-primary btn-sm" id="monitorKwBtn" onclick="sendToKwTracker()" disabled>🔑 Monitorear KW</button>
+      </div>
+      <div id="urlQueriesBox"><div style="color:var(--muted);font-size:13px;padding:8px">Cargando...</div></div>
+    </div>`;
+
+  panel.dataset.url     = url;
+  panel.dataset.country = country;
+  panel.dataset.urlKey  = urlKey;
+
+  // State for this detail view
+  let _queries   = [];
+  let _tsData    = {};           // { query: { dates, clicks, impressions, ctr, position } }
+  let _activeKw  = savedKw;     // currently selected radio ('' = auto top-3)
+  let _urlChart  = null;
+  let _metrics   = { clicks: true, impressions: true, ctr: false, position: true };
+
+  const METRIC_CFG = {
+    clicks:      { label:'Clics',       color:'#3b82f6', yAxis:'yLeft',  fmt: v => v },
+    impressions: { label:'Impresiones', color:'#8b5cf6', yAxis:'yLeft',  fmt: v => v },
+    ctr:         { label:'CTR %',       color:'#22c55e', yAxis:'yRight', fmt: v => v+'%' },
+    position:    { label:'Posición',    color:'#f59e0b', yAxis:'yRight', fmt: v => '#'+v },
+  };
+
+  function renderToggles() {
+    const box = document.getElementById('urlMetricToggles');
+    if (!box) return;
+    box.innerHTML = Object.entries(METRIC_CFG).map(([k, cfg]) => `
+      <button class="metric-toggle ${_metrics[k] ? 'on' : ''}"
+              style="--mt-color:${cfg.color}"
+              onclick="urlToggleMetric('${k}')">
+        <span class="mt-dot"></span>${cfg.label}
+      </button>`).join('');
+  }
+
+  window.urlToggleMetric = function(key) {
+    _metrics[key] = !_metrics[key];
+    renderToggles();
+    drawUrlChart();
+  };
+
+  function getKwsToShow() {
+    if (_activeKw && _tsData[_activeKw]) return [_activeKw];
+    // Auto: top-3 by clicks → impressions → position
+    return _queries
+      .slice()
+      .sort((a,b) => b.clicks - a.clicks || b.impressions - a.impressions || a.position - b.position)
+      .slice(0, 3)
+      .map(r => r.query);
+  }
+
+  const KW_COLORS = ['#3b82f6','#e8791a','#22c55e','#8b5cf6','#f43f5e'];
+
+  function drawUrlChart() {
+    const box = document.getElementById('urlChartBox');
+    if (!box) return;
+    const kwList = getKwsToShow();
+    if (!kwList.length || !_tsData[kwList[0]]) {
+      box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">Sin datos de serie temporal.</div>';
+      return;
+    }
+    const dates = _tsData[kwList[0]].dates;
+    if (_urlChart) { _urlChart.destroy(); _urlChart = null; }
+    box.innerHTML = '<canvas id="urlTsCanvas"></canvas>';
+    const ctx = document.getElementById('urlTsCanvas').getContext('2d');
+
+    const datasets = [];
+    kwList.forEach((kw, ki) => {
+      const ts   = _tsData[kw];
+      const base = KW_COLORS[ki % KW_COLORS.length];
+      Object.entries(METRIC_CFG).forEach(([mKey, mCfg]) => {
+        if (!_metrics[mKey]) return;
+        const isPos = mKey === 'position';
+        datasets.push({
+          label:           `${kw.length>22?kw.slice(0,20)+'…':kw} — ${mCfg.label}`,
+          data:            ts[mKey],
+          borderColor:     kwList.length === 1 ? mCfg.color : base,
+          backgroundColor: (kwList.length === 1 ? mCfg.color : base) + '22',
+          borderWidth:     2,
+          pointRadius:     2,
+          tension:         0.35,
+          yAxisID:         mCfg.yAxis,
+          spanGaps:        true,
+          borderDash:      isPos ? [4,3] : [],
+        });
+      });
+    });
+
+    const hasRight = Object.entries(_metrics).some(([k,v]) => v && METRIC_CFG[k].yAxis === 'yRight');
+    _urlChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: dates, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { color: '#d1d5db', font: { size: 11 }, boxWidth: 12, padding: 10 } },
+          tooltip: { callbacks: {
+            label: ctx => {
+              const mKey = Object.keys(METRIC_CFG).find(k => ctx.dataset.label.includes(METRIC_CFG[k].label));
+              const val  = ctx.raw;
+              return ` ${ctx.dataset.label}: ${mKey === 'position' ? '#'+val : mKey === 'ctr' ? val+'%' : val}`;
+            }
+          }}
+        },
+        scales: {
+          x: { ticks: { color:'#9ca3af', maxTicksLimit:8, font:{size:10} }, grid: { color:'rgba(255,255,255,.05)' } },
+          yLeft:  { type:'linear', position:'left',  ticks:{ color:'#9ca3af', font:{size:10} }, grid:{ color:'rgba(255,255,255,.05)' } },
+          yRight: { type:'linear', position:'right', reverse: true, display: hasRight,
+                    ticks:{ color:'#f59e0b', font:{size:10}, callback: v=>'#'+v }, grid:{ display:false },
+                    title: { display: hasRight, text:'Posición / CTR', color:'#9ca3af', font:{size:10} } },
+        }
+      }
+    });
+  }
+
+  async function loadTimeSeries(kwList) {
+    const params = new URLSearchParams({ url, days: urlPeriod, queries: kwList.join('|||') });
+    if (country) params.set('country', country);
+    const ts = await api(`/api/gsc/page-timeseries?${params}`);
+    Object.assign(_tsData, ts);
+    drawUrlChart();
+  }
+
+  window.selectUrlKw = function(label, query, key) {
+    localStorage.setItem(key, query);
+    _activeKw = query;
+    document.querySelectorAll('.kw-radio-row').forEach(l => l.classList.remove('selected'));
+    label.classList.add('selected');
+    document.getElementById('monitorKwBtn').disabled = false;
+    document.getElementById('urlChartTitle').textContent = `📈 Evolución — ${query.length>40?query.slice(0,38)+'…':query}`;
+    if (!_tsData[query]) {
+      loadTimeSeries([query]);
+    } else {
+      drawUrlChart();
+    }
+  };
+
+  try {
+    const params = new URLSearchParams({ url, days: urlPeriod });
+    if (country) params.set('country', country);
+    const data = await api(`/api/gsc/page-detail?${params}`);
+
+    // Summary
+    const summaryRow = document.getElementById('urlSummaryRow');
+    if (summaryRow && data.summary) {
+      const s = data.summary;
+      const posColor = s.position <= 3 ? 'var(--green)' : s.position <= 10 ? 'var(--yellow)' : 'var(--muted)';
+      summaryRow.innerHTML = `
+        <div class="url-stat"><div class="url-stat-val">${s.clicks.toLocaleString()}</div><div class="url-stat-lbl">Clics</div></div>
+        <div class="url-stat"><div class="url-stat-val">${s.impressions.toLocaleString()}</div><div class="url-stat-lbl">Impresiones</div></div>
+        <div class="url-stat"><div class="url-stat-val" style="color:${posColor}">#${s.position}</div><div class="url-stat-lbl">Posición</div></div>
+        <div class="url-stat"><div class="url-stat-val">${s.ctr}%</div><div class="url-stat-lbl">CTR</div></div>`;
+    } else if (summaryRow) {
+      summaryRow.innerHTML = '<div style="color:var(--muted);font-size:13px">Sin datos para este período y país.</div>';
+    }
+
+    const box = document.getElementById('urlQueriesBox');
+    if (!data.queries || !data.queries.length) {
+      document.getElementById('urlChartBox').innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">Sin queries en este período.</div>';
+      if (box) box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">Sin queries para esta URL en el período seleccionado.</div>';
+      return;
+    }
+
+    _queries = data.queries;
+
+    // Render toggles
+    renderToggles();
+
+    // Queries table with radio buttons
+    if (box) box.innerHTML = `<div style="overflow-x:auto"><table class="gsc-table">
+      <thead><tr>
+        <th style="width:28px"></th>
+        <th>Query</th>
+        <th style="text-align:right">Clics</th>
+        <th style="text-align:right">Impresiones</th>
+        <th style="text-align:right">CTR</th>
+        <th style="text-align:right">Posición</th>
+      </tr></thead>
+      <tbody>${data.queries.map(r => {
+        const pc      = r.position <= 3 ? 'var(--green)' : r.position <= 10 ? 'var(--yellow)' : 'var(--muted)';
+        const checked = r.query === savedKw ? 'checked' : '';
+        const qEsc    = r.query.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return `<tr class="kw-radio-row ${checked?'selected':''}" onclick="selectUrlKw(this,'${qEsc}','${urlKey}')">
+          <td style="text-align:center">
+            <input type="radio" name="urlKw" value="${esc(r.query)}" ${checked}
+                   style="accent-color:var(--accent);cursor:pointer" onclick="event.stopPropagation();selectUrlKw(this.closest('tr'),'${qEsc}','${urlKey}')">
+          </td>
+          <td>${esc(r.query)}</td>
+          <td class="num">${r.clicks.toLocaleString()}</td>
+          <td class="num">${r.impressions.toLocaleString()}</td>
+          <td class="num">${r.ctr}%</td>
+          <td class="pos" style="color:${pc}">${r.position}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+
+    if (savedKw) {
+      document.getElementById('monitorKwBtn').disabled = false;
+      document.getElementById('urlChartTitle').textContent = `📈 Evolución — ${savedKw.length>40?savedKw.slice(0,38)+'…':savedKw}`;
+    }
+
+    // Load timeseries for top-3 (or saved kw) upfront
+    const initialKws = savedKw
+      ? [savedKw]
+      : _queries.slice().sort((a,b)=>b.clicks-a.clicks||b.impressions-a.impressions||a.position-b.position).slice(0,3).map(r=>r.query);
+    await loadTimeSeries(initialKws);
+
+  } catch(e) {
+    const box = document.getElementById('urlQueriesBox');
+    if (box) box.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function serpDebug(id) {
+  toast('Consultando SerpAPI...', 'info', 10000);
+  try {
+    const data = await api(`/api/keywords/${id}/serp-debug`);
+    const lines = [
+      `q: "${data.q}"  location: ${data.location}  domain: ${data.google_domain}`,
+      `Buscando: ${data.domain_looking_for}`,
+      ``,
+      ...data.organic.map(r =>
+        `${r.is_ours ? '✅' : '  '} [${r.organic_rank}] serpapi_pos=${r.serpapi_position}  ${r.url}`
+      )
+    ].join('\n');
+    alert(lines);
+  } catch(e) { toast('Error: ' + e.message, 'err'); }
+}
+
+function sendToKwTracker() {
+  const panel   = document.getElementById('urlsPanel');
+  const country = panel.dataset.country || '';
+  const checked = document.querySelector('input[name="urlKw"]:checked');
+  if (!checked) { toast('Selecciona una keyword primero', 'err'); return; }
+  const query = checked.value;
+  const c     = getCountryByGsc(country);
+
+  // Check if keyword already exists (same query + location)
+  const loc     = c ? c.loc : 'Spain';
+  const existing = keywords.find(k => k.q.toLowerCase() === query.toLowerCase() && (k.location||'').toLowerCase() === loc.toLowerCase());
+  if (existing) {
+    const added = existing.created_at || (existing.history && existing.history.length ? existing.history[0].date : '—');
+    toast(`"${query}" ya está en Posiciones KW (añadida el ${added})`, 'info', 5000);
+    // Navigate to KW and select it
+    setView('kw');
+    selectedId = existing.id;
+    renderSidebar();
+    renderDetail();
+    return;
+  }
+
+  setView('kw');
+  editingId = null;
+  document.getElementById('addTitle').textContent = 'Añadir keyword';
+  setForm({
+    engine:'google', q:query,
+    location:      loc,
+    google_domain: c ? c.dom : 'google.es',
+    hl:            c ? c.hl  : 'es',
+    gl:            c ? c.gl  : 'es',
+    device:'desktop', num:'100',
+  });
+  buildCountryOptions('kwCountryDrop');
+  document.getElementById('kwCountryDrop').value = country || '';
+  document.getElementById('addModal').classList.add('show');
+  setTimeout(() => document.getElementById('f_q').focus(), 80);
+  toast(`"${query}" lista para guardar en Posiciones KW`, 'ok');
+}
+
+// ─── ADD / DELETE URL ─────────────────────────────────────────────────────
+function updateCountryPreview(code) {
+  const el = document.getElementById('countryPreview');
+  if (!el) return;
+  if (!code) { el.textContent = ''; return; }
+  if (code.length < 3) { el.innerHTML = '<span style="color:var(--muted)">Escribe 3 letras...</span>'; return; }
+  const c = getCountryByGsc(code);
+  el.innerHTML = c
+    ? `<span style="color:var(--green)">✓ ${c.f} ${c.n}</span>`
+    : `<span style="color:var(--yellow)">Código: ${code.toUpperCase()} (se usará tal cual en GSC)</span>`;
+}
+
+function openAddUrl() {
+  document.getElementById('fu_url').value     = '';
+  document.getElementById('fu_country').value = '';
+  const prev = document.getElementById('countryPreview');
+  if (prev) prev.innerHTML = '';
+  buildCountryOptions('urlCountryDrop');
+  document.getElementById('urlCountryDrop').value = '';
+  document.getElementById('addUrlModal').classList.add('show');
+  setTimeout(() => document.getElementById('fu_url').focus(), 80);
+}
+
+function renderUrlCountryChips() { buildCountryOptions('urlCountryDrop'); }
+function closeAddUrl() { document.getElementById('addUrlModal').classList.remove('show'); }
+
+async function saveUrl() {
+  const url     = document.getElementById('fu_url').value.trim();
+  const country = document.getElementById('fu_country').value;
+  if (!url) { toast('La URL es obligatoria', 'err'); return; }
+  if (!url.startsWith('http')) { toast('Introduce la URL completa (https://...)', 'err'); return; }
+  const btn = document.getElementById('saveUrlBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const newUrl = await api('/api/urls', { method:'POST', body: JSON.stringify({ url, country }) });
+    urls.push(newUrl);
+    renderUrlSidebar();
+    closeAddUrl();
+    toast('URL añadida', 'ok');
+    selectUrl(newUrl.url, newUrl.id);
+  } catch(e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Guardar';
+  }
+}
+
+async function deleteUrl(id) {
+  if (!confirm('¿Eliminar esta URL?')) return;
+  try {
+    await api(`/api/urls/${id}`, { method: 'DELETE' });
+    urls = urls.filter(u => u.id !== id);
+    if (selectedUrlId === id) {
+      selectedUrl = null; selectedUrlId = null;
+      document.getElementById('urlsPanel').innerHTML = '<div class="empty" style="height:100%"><div class="empty-icon">📄</div><h2>Selecciona una URL</h2><p>Selecciona una URL del panel lateral para ver sus datos de GSC.</p></div>';
+    }
+    renderUrlSidebar();
+    toast('URL eliminada', 'ok');
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────
+function addSerpKeyRow(keyVal='') {
+  const container = document.getElementById('serpKeyRows');
+  const idx = container.children.length;
+  const row = document.createElement('div');
+  row.className = 'serp-key-row';
+  row.innerHTML = `
+    <input type="password" class="serp-key-input" placeholder="SerpAPI key ${idx+1}" value="${keyVal}" autocomplete="off">
+    <span class="serp-key-balance" data-idx="${idx}">—</span>
+    <button class="btn btn-ghost btn-sm" onclick="checkSerpKeyBalance(${idx})" title="Verificar saldo" style="padding:4px 8px">⟳</button>
+    <button class="btn btn-ghost btn-sm" onclick="this.closest('.serp-key-row').remove()" style="padding:4px 8px;color:var(--red)">✕</button>
+  `;
+  container.appendChild(row);
+  return row;
+}
+
+async function checkSerpKeyBalance(idx) {
+  const rows = document.querySelectorAll('.serp-key-row');
+  const row = rows[idx];
+  if (!row) return;
+  const key = row.querySelector('.serp-key-input').value.trim();
+  const badge = row.querySelector('.serp-key-balance');
+  if (!key) { badge.textContent = 'Sin key'; return; }
+  badge.textContent = '...';
+  badge.className = 'serp-key-balance';
+  try {
+    const data = await api(`/api/serpapi-balance?key=${encodeURIComponent(key)}`);
+    const left = data.total_searches_left ?? data.searches_per_month ?? '?';
+    badge.textContent = `${left} búsq.`;
+    badge.className = 'serp-key-balance ' + (left === 0 ? 'empty' : left < 50 ? 'warn' : 'ok');
+  } catch(e) {
+    badge.textContent = 'Error';
+    badge.className = 'serp-key-balance empty';
+  }
+}
+
+async function checkAllSerpKeys() {
+  const rows = document.querySelectorAll('.serp-key-row');
+  rows.forEach((_, i) => checkSerpKeyBalance(i));
+}
+
+async function openSettings() {
+  const s = await api('/api/settings').catch(()=>({}));
+  document.getElementById('s_domain').value = s.domain||'getlinko.com';
+  document.getElementById('s_ahrefs').value = s.ahrefsKey||'';
+  activeCountries = s.activeCountries || activeCountries;
+
+  // Render SerpAPI key rows
+  const container = document.getElementById('serpKeyRows');
+  container.innerHTML = '';
+  const keys = Array.isArray(s.apiKeys) && s.apiKeys.length
+    ? s.apiKeys.map(k => typeof k === 'string' ? k : k.key)
+    : (s.apiKey ? [s.apiKey] : []);
+  if (keys.length === 0) keys.push('');
+  keys.forEach(k => addSerpKeyRow(k));
+  // Check balances after a short delay
+  setTimeout(checkAllSerpKeys, 200);
+
+  updateGscStatus();
+  renderCountrySettings();
+  document.getElementById('settingsModal').classList.add('show');
+}
+function closeSettings(){ document.getElementById('settingsModal').classList.remove('show'); }
+
+function renderCountrySettings() {
+  const grid = document.getElementById('countrySettingsGrid');
+  if (!grid) return;
+  grid.innerHTML = COUNTRIES.map(c => {
+    const on = activeCountries.includes(c.gsc);
+    return `<label class="country-toggle ${on?'on':''}" id="ct_${c.gsc}">
+      <input type="checkbox" ${on?'checked':''} onchange="toggleCountrySetting('${c.gsc}',this.checked)">
+      <span>${c.f}</span><span>${c.n}</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleCountrySetting(code, checked) {
+  if (checked && !activeCountries.includes(code)) activeCountries.push(code);
+  if (!checked) activeCountries = activeCountries.filter(c => c !== code);
+  const el = document.getElementById(`ct_${code}`);
+  if (el) el.classList.toggle('on', checked);
+}
+
+function filterCountrySettings(val) {
+  const term = val.toLowerCase().trim();
+  document.querySelectorAll('#countrySettingsGrid .country-toggle').forEach(el => {
+    const text = el.textContent.toLowerCase();
+    el.style.display = (!term || text.includes(term)) ? '' : 'none';
+  });
+}
+
+async function saveSettings(){
+  const domain    = document.getElementById('s_domain').value.trim()||'getlinko.com';
+  const ahrefsKey = document.getElementById('s_ahrefs').value.trim();
+  const apiKeys   = [...document.querySelectorAll('.serp-key-input')]
+    .map(i => i.value.trim()).filter(Boolean);
+  // Keep legacy apiKey as first key for backward compat
+  const apiKey = apiKeys[0] || '';
+  await api('/api/settings',{method:'POST',body:JSON.stringify({apiKey,apiKeys,domain,ahrefsKey,activeCountries})});
+  document.getElementById('domainChip').textContent=domain;
+  document.getElementById('portadaDomain').textContent=domain;
+  closeSettings();
+  toast('Ajustes guardados','ok');
+  loadDashboard();
+  loadGscPanel();
+}
+
+// ─── COUNTRY DROPDOWNS ────────────────────────────────────────────────────
+function buildCountryOptions(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  // Keep first blank option
+  sel.innerHTML = '<option value="">— Seleccionar país —</option>';
+  activeCountries.forEach(code => {
+    const c = getCountryByGsc(code);
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = c ? `${c.f} ${c.n}` : code.toUpperCase();
+    sel.appendChild(opt);
+  });
+  // Divider + "add country" option
+  if (activeCountries.length) {
+    const divider = document.createElement('option');
+    divider.disabled = true;
+    divider.textContent = '──────────────';
+    sel.appendChild(divider);
+  }
+  const add = document.createElement('option');
+  add.value = '__add__';
+  add.textContent = '＋ Configurar países...';
+  sel.appendChild(add);
+}
+
+function renderKwCountryChips() { buildCountryOptions('kwCountryDrop'); }
+function renderUrlCountryChips() { buildCountryOptions('urlCountryDrop'); }
+
+function onKwCountryDrop(val) {
+  if (val === '__add__') {
+    document.getElementById('kwCountryDrop').value = '';
+    closeAdd();
+    openSettings();
+    // scroll to countries section after modal opens
+    setTimeout(() => {
+      const el = document.getElementById('countrySettingsGrid');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+    return;
+  }
+  if (!val) return;
+  const c = getCountryByGsc(val);
+  if (!c) return;
+  document.getElementById('f_location').value      = c.loc;
+  document.getElementById('f_google_domain').value = c.dom;
+  document.getElementById('f_hl').value            = c.hl;
+  document.getElementById('f_gl').value            = c.gl;
+}
+
+function onUrlCountryDrop(val) {
+  if (val === '__add__') {
+    document.getElementById('urlCountryDrop').value = '';
+    closeAddUrl();
+    openSettings();
+    setTimeout(() => {
+      const el = document.getElementById('countrySettingsGrid');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+    return;
+  }
+  document.getElementById('fu_country').value = val;
+  updateCountryPreview(val);
+}
+
+// ─── DASHBOARD / AHREFS METRICS ───────────────────────────────────────────
+let dashPeriod = 7;
+
+function setPeriod(days, btn) {
+  dashPeriod = days;
+  document.querySelectorAll('#periodBar .period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  const box = document.getElementById('ahrefsMetrics');
+  if (!box) return;
+  const btn = document.getElementById('dashRefreshBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  box.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Cargando métricas Ahrefs...</div>';
+
+  try {
+    const data = await api(`/api/ahrefs-metrics?days=${dashPeriod}`);
+    box.innerHTML = renderMetricCards(data.current || data, data.previous || null);
+  } catch (e) {
+    if (e.message && e.message.includes('No Ahrefs API key')) {
+      box.innerHTML = `<div class="portada-no-key">
+        <b>Ahrefs no configurado</b> — añade tu API Key en
+        <button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="openSettings()">⚙ Ajustes</button>
+      </div>`;
+    } else {
+      box.innerHTML = `<div class="portada-no-key" style="border-color:rgba(239,68,68,.3)">
+        <b style="color:var(--red)">Error:</b> ${e.message}
+      </div>`;
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻'; }
+  }
+}
+
+function fmtNum(n) {
+  if (n == null || n === undefined) return '—';
+  if (n >= 1000000) return (n/1000000).toFixed(1).replace(/\.0$/,'') + 'M';
+  if (n >= 1000)    return (n/1000).toFixed(1).replace(/\.0$/,'') + 'K';
+  return n.toLocaleString();
+}
+
+function getField(obj, keys) {
+  if (!obj) return null;
+  for (const k of keys) if (obj[k] != null) return obj[k];
+  return null;
+}
+
+function renderDelta(curr, prev) {
+  if (prev == null || curr == null) return '';
+  const diff = curr - prev;
+  if (diff === 0) return '<div class="metric-delta" style="color:var(--muted)">→ Sin cambio</div>';
+  const color = diff > 0 ? 'var(--green)' : 'var(--red)';
+  const arrow = diff > 0 ? '▲' : '▼';
+  const abs   = Math.abs(diff);
+  return `<div class="metric-delta" style="color:${color}">${arrow} ${diff>0?'+':''}${fmtNum(abs)}</div>`;
+}
+
+const METRIC_DEFS = [
+  { icon: '🏆', label: 'Domain Rating',     keys: ['domain_rating','dr'],                             sparkId: 'spark-dr',          color: '#e8792a' },
+  { icon: '🔗', label: 'Dominios referidos', keys: ['refdomains','referring_domains','ref_domains'],   sparkId: 'spark-refdomains',  color: '#3b82f6' },
+  { icon: '⛓️', label: 'Backlinks',          keys: ['backlinks','all_backlinks','total_backlinks'],    sparkId: 'spark-backlinks',   color: '#8b5cf6' },
+  { icon: '📈', label: 'Tráfico orgánico',   keys: ['org_traffic','organic_traffic'],                 sparkId: 'spark-org_traffic', color: '#22c55e' },
+  { icon: '🔑', label: 'Keywords orgánicas', keys: ['org_keywords','organic_keywords'],               sparkId: 'spark-org_keywords',color: '#eab308' },
+];
+
+function renderMetricCards(m, prev) {
+  return `<div class="metric-grid">${METRIC_DEFS.map(d => {
+    const val     = getField(m, d.keys);
+    const prevVal = getField(prev, d.keys);
+    return `<div class="metric-card">
+      <div class="metric-icon">${d.icon}</div>
+      <div class="metric-label">${d.label}</div>
+      <div class="metric-value">${fmtNum(val)}</div>
+      ${renderDelta(val, prevVal)}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+
+// ─── IMPORT ───────────────────────────────────────────────────────────────
+function openImport() {
+  importRows=[];
+  document.getElementById('dropText').textContent='📂 Haz clic o arrastra un archivo CSV aquí';
+  document.getElementById('importPreview').innerHTML='';
+  document.getElementById('importBtn').disabled=true;
+  document.getElementById('fileInput').value='';
+  document.getElementById('importModal').classList.add('show');
+}
+function closeImport(){ document.getElementById('importModal').classList.remove('show'); }
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handleFile(f);});
+
+function handleFile(file) {
+  if (!file) return;
+  document.getElementById('dropText').textContent=`📄 ${file.name}`;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=e.target.result;
+    importRows=parseCSV(text);
+    const prev=document.getElementById('importPreview');
+    if (!importRows.length) { prev.innerHTML='<span style="color:var(--red)">No se encontraron filas válidas.</span>'; return; }
+    prev.innerHTML=`<b style="color:var(--text)">${importRows.length} keywords encontradas:</b><br>`+importRows.slice(0,8).map(r=>`• ${r.q} (${r.location||'—'}, ${r.device||'—'})`).join('<br>')+(importRows.length>8?`<br>...y ${importRows.length-8} más`:'');
+    document.getElementById('importBtn').disabled=false;
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function parseCSV(text) {
+  const lines=text.split(/\r?\n/).map(l=>l.replace(/^﻿/,'')).filter(l=>l.trim());
+  if (lines.length<2) return [];
+  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/^"|"$/g,''));
+  const rows=[];
+  for (let i=1;i<lines.length;i++) {
+    const vals=splitCSVLine(lines[i]);
+    const row={};
+    headers.forEach((h,j)=>row[h]=(vals[j]||'').trim().replace(/^"|"$/g,''));
+    if (row.q) rows.push(row);
+  }
+  return rows;
+}
+
+function splitCSVLine(line) {
+  const result=[]; let cur=''; let inQ=false;
+  for (const c of line) {
+    if (c==='"') { inQ=!inQ; cur+=c; }
+    else if (c===','&&!inQ) { result.push(cur); cur=''; }
+    else cur+=c;
+  }
+  result.push(cur);
+  return result;
+}
+
+async function doImport() {
+  const btn=document.getElementById('importBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Importando...';
+  try {
+    const r=await api('/api/import',{method:'POST',body:JSON.stringify({rows:importRows})});
+    keywords=await api('/api/keywords');
+    renderSidebar(); closeImport();
+    toast(`${r.added} keywords importadas`,'ok');
+  } catch(e) { toast(e.message,'err'); }
+  finally { btn.disabled=false; btn.innerHTML='Importar'; }
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtDate(d){ if(!d)return'—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y.slice(2)}`; }
+function ev(e){ e.stopPropagation(); }
+function toast(msg,type='info',ms=3200){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+(type==='ok'?'ok':type==='err'?'err':'');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.className='',ms);
+}
+
+// ─── KEYBOARD ─────────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeAdd();closeSettings();closeImport();closeAddUrl();}
+});
+['addModal','settingsModal','importModal','addUrlModal'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{
+    if(e.target.id===id){ closeAdd();closeSettings();closeImport();closeAddUrl(); }
+  });
+});
+document.getElementById('f_q').addEventListener('keydown',e=>{ if(e.key==='Enter')saveKw(); });
+document.getElementById('fu_url').addEventListener('keydown',e=>{ if(e.key==='Enter')saveUrl(); });
+
+// ─── ACTIVITY ─────────────────────────────────────────────────────────────────
+let activityMode = null; // 'logs' | 'movements' | null
+
+function togglePanel(mode) {
+  const same = activityMode === mode;
+  // Reset
+  activityMode = null;
+  activityOpen = false;
+  document.getElementById('activityPanel').style.display = 'none';
+  document.getElementById('logsBtn').classList.remove('btn-active');
+  document.getElementById('movementsBtn').classList.remove('btn-active');
+
+  if (!same) {
+    activityMode = mode;
+    activityOpen = true;
+    document.getElementById('kwEmptyState').style.display = 'none';
+    document.getElementById('kwDetail').style.display = 'none';
+    document.getElementById('activityPanel').style.display = 'flex';
+    document.getElementById(mode === 'logs' ? 'logsBtn' : 'movementsBtn').classList.add('btn-active');
+    renderActivity();
+  } else {
+    // Volver a lo que había
+    if (selectedId) document.getElementById('kwDetail').style.display = 'block';
+    else document.getElementById('kwEmptyState').style.display = 'flex';
+  }
+}
+
+async function renderActivity() {
+  const panel = document.getElementById('activityPanel');
+  panel.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px">Cargando...</div>';
+
+  if (activityMode === 'logs') {
+    const logs = await api('/api/logs').catch(() => []);
+    panel.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📋 Historial de actualizaciones</span>
+          <span style="font-size:11px;color:var(--muted)">${logs.length} runs guardados</span>
+        </div>
+        ${renderLogsTable(logs)}
+      </div>`;
+  } else if (activityMode === 'movements') {
+    const { up, down } = computeMovements();
+    panel.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📈 Subidas y apariciones</span>
+          <span style="font-size:12px;color:var(--green);font-weight:600">${up.length} keywords</span>
+        </div>
+        ${renderMovementsTable(up, 'up')}
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📉 Bajadas y desapariciones</span>
+          <span style="font-size:12px;color:var(--red);font-weight:600">${down.length} keywords</span>
+        </div>
+        ${renderMovementsTable(down, 'down')}
+      </div>`;
+  }
+}
+
+function renderLogsTable(logs) {
+  if (!logs.length) return '<div style="padding:22px;text-align:center;color:var(--muted);font-size:13px">Sin registros aún. Aparecerán tras la primera actualización.</div>';
+  return `<table>
+    <thead><tr>
+      <th>Fecha</th><th>Hora</th><th>Keywords</th>
+      <th style="color:var(--green)">✓ OK</th>
+      <th style="color:var(--red)">✗ Errores</th>
+      <th style="color:var(--green)">↑ Subidas</th>
+      <th style="color:var(--red)">↓ Bajadas</th>
+      <th style="color:var(--blue)">★ Aparecen</th>
+      <th style="color:var(--muted)">✕ Desap.</th>
+    </tr></thead>
+    <tbody>
+      ${logs.map(l => {
+        const t = l.ts ? new Date(l.ts).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) : '—';
+        return `<tr>
+          <td><b>${fmtDate(l.date)}</b></td>
+          <td style="color:var(--muted);font-size:11px">${t}</td>
+          <td>${l.processed}</td>
+          <td style="color:var(--green)">${l.ok}</td>
+          <td style="color:${l.errors>0?'var(--red)':'var(--muted)'}">${l.errors}</td>
+          <td style="color:var(--green);font-weight:${l.up>0?'700':'400'}">${l.up||0}</td>
+          <td style="color:${l.down>0?'var(--red)':'var(--muted)'};font-weight:${l.down>0?'700':'400'}">${l.down||0}</td>
+          <td style="color:${l.appeared>0?'var(--blue)':'var(--muted)'};font-weight:${l.appeared>0?'700':'400'}">${l.appeared||0}</td>
+          <td style="color:var(--muted)">${l.disappeared||0}</td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+}
+
+function computeMovements() {
+  if (!keywords.length) return { up: [], down: [] };
+  // Fecha más reciente en el historial
+  let latestDate = null;
+  for (const kw of keywords) {
+    if (kw.history && kw.history.length > 0) {
+      const d = kw.history[0].date;
+      if (!latestDate || d > latestDate) latestDate = d;
+    }
+  }
+  if (!latestDate) return { up: [], down: [] };
+
+  const up = [], down = [];
+  for (const kw of keywords) {
+    const h = kw.history || [];
+    if (!h.length || h[0].date !== latestDate) continue;
+    const curr = h[0].position;
+    const prevEntry = h.find((e,i) => i > 0 && e.date !== latestDate);
+    const prev = prevEntry ? prevEntry.position : null;
+    const hasPrev = prevEntry !== undefined;
+    if (!hasPrev) continue; // primera vez, sin movimiento
+
+    if (curr !== null && prev === null)                           up.push({kw, type:'new', curr, prev, date:h[0].date});
+    else if (curr === null && prev !== null)                      down.push({kw, type:'lost', curr, prev, date:h[0].date});
+    else if (curr !== null && prev !== null && curr < prev)       up.push({kw, type:'up', curr, prev, diff:prev-curr, date:h[0].date});
+    else if (curr !== null && prev !== null && curr > prev)       down.push({kw, type:'down', curr, prev, diff:prev-curr, date:h[0].date});
+  }
+  up.sort((a,b) => (a.curr||999)-(b.curr||999));
+  down.sort((a,b) => Math.abs(a.diff||0)-Math.abs(b.diff||0));
+  return { up, down };
+}
+
+function renderMovementsTable(list, dir) {
+  if (!list.length) return `<div style="padding:22px;text-align:center;color:var(--muted);font-size:13px">Sin ${dir==='up'?'subidas ni apariciones':'bajadas ni desapariciones'} en la última actualización.</div>`;
+  return `<table>
+    <thead><tr><th>Keyword</th><th>País / Device</th><th>Anterior</th><th>Actual</th><th>Cambio</th></tr></thead>
+    <tbody>
+      ${list.map(m => {
+        const badgeCls = p => p===null?'pos-na':p<=3?'pos-good':p<=10?'pos-mid':'pos-low';
+        const change = m.type==='new'
+          ? `<span style="color:var(--blue);font-weight:700">★ Nueva aparición</span>`
+          : m.type==='lost'
+          ? `<span style="color:var(--muted);font-weight:700">✕ Desapareció</span>`
+          : m.diff > 0
+          ? `<span class="up" style="font-weight:700">↑ +${m.diff}</span>`
+          : `<span class="dn" style="font-weight:700">↓ ${m.diff}</span>`;
+        return `<tr onclick="selectKw(${m.kw.id})" style="cursor:pointer">
+          <td style="font-weight:500">${esc(m.kw.q)}</td>
+          <td><span class="mv-tag">${m.kw.location||'—'}</span> <span class="mv-tag">${m.kw.device}</span></td>
+          <td><span class="pos-badge ${badgeCls(m.prev)}">${m.prev===null?'N/A':'#'+m.prev}</span></td>
+          <td><span class="pos-badge ${badgeCls(m.curr)}">${m.curr===null?'N/A':'#'+m.curr}</span></td>
+          <td>${change}</td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+}
+
+init();
+</script>
+</body>
+</html>
